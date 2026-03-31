@@ -89,6 +89,7 @@ interface MipsState {
   interruptState: InterruptState;
   
   setCCode: (code: string) => void;
+  setMipsCode: (code: string) => void;
   compileToMips: () => void;
   stepExecution: () => void;
   resetExecution: () => void;
@@ -157,28 +158,28 @@ add:
   }
   return sum;
 }`,
-    mipsCode: `.text
+    mipsCode: `.data
+array:  .word 10, 20, 30
+sum:    .word 0
+
+.text
 main:
-  # prologue (need 24 bytes: $ra, arr[3]=12b, sum=4b, i=4b)
+  # prologue
   addi $sp, $sp, -24
   sw   $ra, 20($sp)
-  
-  # arr[0] = 1, arr[1] = 2, arr[2] = 3
-  # store arr sequentially starting from 8($sp)
-  li   $t0, 1
-  sw   $t0, 8($sp)
-  li   $t0, 2
-  sw   $t0, 12($sp)
-  li   $t0, 3
-  sw   $t0, 16($sp)
-  
-  # sum = 0
-  li   $t1, 0
-  sw   $t1, 4($sp)
   
   # i = 0
   li   $t2, 0
   sw   $t2, 0($sp)
+  
+  # load base address of array into $t8 (simulating .data at 0x10000000)
+  # Actually, we will just use absolute addresses for simplicity in this emulator
+  # array is at 0x10000000, sum is at 0x1000000C
+  li   $t8, 0x10000000
+  
+  # init sum in memory to 0
+  li   $t1, 0
+  sw   $t1, 12($t8)
 
 loop_start:
   lw   $t2, 0($sp)
@@ -186,14 +187,14 @@ loop_start:
   slt  $t4, $t2, $t3
   beq  $t4, $zero, loop_end
   
-  # sum += arr[i]
+  # sum += array[i]
   sll  $t5, $t2, 2
-  addi $t6, $sp, 8
-  add  $t6, $t6, $t5
-  lw   $t7, 0($t6)
-  lw   $t1, 4($sp)
+  add  $t6, $t8, $t5
+  lw   $t7, 0($t6)      # load array[i] from .data
+  
+  lw   $t1, 12($t8)     # load sum from .data
   add  $t1, $t1, $t7
-  sw   $t1, 4($sp)
+  sw   $t1, 12($t8)     # store sum back to .data
   
   # i++
   lw   $t2, 0($sp)
@@ -202,7 +203,7 @@ loop_start:
   j    loop_start
 
 loop_end:
-  lw   $v0, 4($sp)
+  lw   $v0, 12($t8)     # return sum
   lw   $ra, 20($sp)
   addi $sp, $sp, 24
   jr   $ra`
@@ -288,6 +289,7 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
   const instructions: Instruction[] = [];
   const labels: Record<string, number> = {};
   let currentAddress = 0x00400000;
+  let inDataSection = false;
   
   lines.forEach((line, index) => {
     const text = line.trim();
@@ -302,6 +304,15 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
     
     if (pureCode === '') {
       instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'comment' });
+    } else if (pureCode === '.data') {
+      inDataSection = true;
+      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
+    } else if (pureCode === '.text') {
+      inDataSection = false;
+      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
+    } else if (inDataSection) {
+      // In .data section, lines like "array: .word 10, 20" shouldn't get PC addresses
+      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
     } else if (pureCode.startsWith('.')) {
       instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
     } else if (pureCode.endsWith(':')) {
@@ -333,6 +344,43 @@ export const useMipsStore = create<MipsState>((set, get) => {
   const initialParse = parseMipsToInstructions(EXAMPLES[0].mipsCode);
   const initialStartIndex = Math.max(0, initialParse.instructions.findIndex(i => i.type === 'code'));
   
+  // Setup initial memory for .data section if present
+  const initialMemory: Record<number, number> = {};
+  let inDataSectionInitial = false;
+  let currentDataAddressInitial = 0x10000000;
+  
+  EXAMPLES[0].mipsCode.split('\n').forEach(line => {
+    const text = line.trim();
+    if (text === '.data') {
+      inDataSectionInitial = true;
+      return;
+    }
+    if (text === '.text') {
+      inDataSectionInitial = false;
+      return;
+    }
+    if (inDataSectionInitial) {
+      // support "label: .word val, val..." or just ".word val, val..."
+      const match = text.match(/\.word\s+(.+)/);
+      if (match) {
+        // extract the part after .word, ignoring any comments
+        let valuesStr = match[1];
+        const cIdx = valuesStr.indexOf('#');
+        if (cIdx !== -1) {
+          valuesStr = valuesStr.substring(0, cIdx);
+        }
+        
+        const values = valuesStr.split(',').map(v => parseInt(v.trim(), 10));
+        values.forEach(val => {
+          if (!isNaN(val)) {
+            initialMemory[currentDataAddressInitial] = val;
+            currentDataAddressInitial += 4;
+          }
+        });
+      }
+    }
+  });
+
   return {
     cCode: EXAMPLES[0].cCode,
     mipsCode: EXAMPLES[0].mipsCode,
@@ -340,7 +388,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
     labels: initialParse.labels,
     
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
-    memory: {},
+    memory: initialMemory,
     pc: 0x00400000,
     isPlaying: false,
     currentInstructionIndex: initialStartIndex,
@@ -353,6 +401,55 @@ export const useMipsStore = create<MipsState>((set, get) => {
     
     setCCode: (code) => set({ cCode: code }),
     
+    setMipsCode: (code) => {
+      const parsed = parseMipsToInstructions(code);
+      
+      const initialMemory: Record<number, number> = {};
+      let inDataSection = false;
+      let currentDataAddress = 0x10000000;
+      
+      code.split('\n').forEach(line => {
+        const text = line.trim();
+        if (text === '.data') {
+          inDataSection = true;
+          return;
+        }
+        if (text === '.text') {
+          inDataSection = false;
+          return;
+        }
+        if (inDataSection) {
+          const match = text.match(/\.word\s+(.+)/);
+          if (match) {
+            let valuesStr = match[1];
+            const cIdx = valuesStr.indexOf('#');
+            if (cIdx !== -1) {
+              valuesStr = valuesStr.substring(0, cIdx);
+            }
+            const values = valuesStr.split(',').map(v => parseInt(v.trim(), 10));
+            values.forEach(val => {
+              if (!isNaN(val)) {
+                initialMemory[currentDataAddress] = val;
+                currentDataAddress += 4;
+              }
+            });
+          }
+        }
+      });
+
+      set({
+        mipsCode: code,
+        instructions: parsed.instructions,
+        labels: parsed.labels,
+        registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
+        memory: initialMemory,
+        pc: 0x00400000,
+        currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
+        isPlaying: false,
+        interruptState: { isActive: false, step: 0, savedPc: 0 }
+      });
+    },
+
     compileToMips: () => {
       // Find matching example to mock compilation, else use default
       const example = EXAMPLES.find(e => get().cCode.includes(e.cCode.substring(0, 20))) || EXAMPLES[0];
@@ -372,13 +469,48 @@ export const useMipsStore = create<MipsState>((set, get) => {
     loadExample: (index: number) => {
       const ex = EXAMPLES[index];
       const parsed = parseMipsToInstructions(ex.mipsCode);
+      
+      // Setup initial memory for .data section if present
+      const initialMemory: Record<number, number> = {};
+      let inDataSection = false;
+      let currentDataAddress = 0x10000000;
+      
+      ex.mipsCode.split('\n').forEach(line => {
+        const text = line.trim();
+        if (text === '.data') {
+          inDataSection = true;
+          return;
+        }
+        if (text === '.text') {
+          inDataSection = false;
+          return;
+        }
+        if (inDataSection) {
+          const match = text.match(/\.word\s+(.+)/);
+          if (match) {
+            let valuesStr = match[1];
+            const cIdx = valuesStr.indexOf('#');
+            if (cIdx !== -1) {
+              valuesStr = valuesStr.substring(0, cIdx);
+            }
+            const values = valuesStr.split(',').map(v => parseInt(v.trim(), 10));
+            values.forEach(val => {
+              if (!isNaN(val)) {
+                initialMemory[currentDataAddress] = val;
+                currentDataAddress += 4;
+              }
+            });
+          }
+        }
+      });
+
       set({
         cCode: ex.cCode,
         mipsCode: ex.mipsCode,
         instructions: parsed.instructions,
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
-        memory: {},
+        memory: initialMemory,
         pc: 0x00400000,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
@@ -424,7 +556,9 @@ export const useMipsStore = create<MipsState>((set, get) => {
       
       try {
         if (op === 'li') {
-          setReg(parts[1], parseInt(parts[2], 10));
+          const valStr = parts[2];
+          const val = valStr.startsWith('0x') ? parseInt(valStr, 16) : parseInt(valStr, 10);
+          setReg(parts[1], val);
         } else if (op === 'addi') {
           setReg(parts[1], getReg(parts[2]) + parseInt(parts[3], 10));
         } else if (op === 'add') {
@@ -481,9 +615,44 @@ export const useMipsStore = create<MipsState>((set, get) => {
     },
     
     resetExecution: () => {
+      const ex = EXAMPLES.find(e => e.mipsCode === get().mipsCode) || EXAMPLES[0];
+      
+      const initialMemory: Record<number, number> = {};
+      let inDataSection = false;
+      let currentDataAddress = 0x10000000;
+      
+      ex.mipsCode.split('\n').forEach(line => {
+        const text = line.trim();
+        if (text === '.data') {
+          inDataSection = true;
+          return;
+        }
+        if (text === '.text') {
+          inDataSection = false;
+          return;
+        }
+        if (inDataSection) {
+          const match = text.match(/\.word\s+(.+)/);
+          if (match) {
+            let valuesStr = match[1];
+            const cIdx = valuesStr.indexOf('#');
+            if (cIdx !== -1) {
+              valuesStr = valuesStr.substring(0, cIdx);
+            }
+            const values = valuesStr.split(',').map(v => parseInt(v.trim(), 10));
+            values.forEach(val => {
+              if (!isNaN(val)) {
+                initialMemory[currentDataAddress] = val;
+                currentDataAddress += 4;
+              }
+            });
+          }
+        }
+      });
+
       set({
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
-        memory: {},
+        memory: initialMemory,
         pc: 0x00400000,
         currentInstructionIndex: Math.max(0, get().instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,

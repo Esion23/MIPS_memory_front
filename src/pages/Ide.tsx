@@ -219,10 +219,10 @@ export function IdePage() {
             {/* Tab 1: Stack & Memory */}
             {activeTab === 'stackAndMemory' && (
               <div className="flex h-full overflow-hidden relative">
-                <div className="flex-1 flex flex-col items-center justify-center p-4 relative" id="memory-layout-container">
-                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-4 -mt-12">
+                <div className="flex-1 flex flex-col items-center justify-start pt-12 p-4 relative" id="memory-layout-container">
+                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-8">
                     {/* Diagram Top */}
-                    <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0 mt-8">
+                    <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0">
                       <div 
                         className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10"
                         style={{ top: `${Math.min(85, Math.max(0, (0x7FFFFFFC - spVal) / 4 * 4))}px` }}
@@ -263,6 +263,29 @@ export function IdePage() {
                           {toHex(0x00000000)}
                         </div>
                       </div>
+                    </div>
+                    
+                    {/* .data section view */}
+                    <div className="w-full flex flex-col items-center mt-4">
+                      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x10000000)</h3>
+                      <div className="w-64 border border-slate-300 bg-white rounded overflow-hidden text-xs font-mono">
+                        {/* We will display a few words from 0x10000000, growing upwards visually to match address increment */}
+                        {[20, 16, 12, 8, 4, 0].map(offset => {
+                          const addr = 0x10000000 + offset;
+                          const val = memory[addr];
+                          return (
+                            <div key={addr} className="flex border-b border-slate-200 last:border-b-0 hover:bg-slate-50">
+                              <div className="w-24 bg-slate-100 p-1 text-slate-500 border-r border-slate-200 text-center">
+                                {toHex(addr)}
+                              </div>
+                              <div className="flex-1 p-1 text-center text-slate-800">
+                                {val !== undefined ? toHex(val) : '-'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="text-slate-400 text-xs mt-1 font-mono">↑ 向上增长 ↑</div>
                     </div>
                   </div>
                 </div>
