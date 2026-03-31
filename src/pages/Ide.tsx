@@ -9,8 +9,12 @@ export function IdePage() {
     interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
   } = useMipsStore();
 
-  const [activeTab, setActiveTab] = useState<'registers' | 'memory' | 'interrupt'>('registers');
+  const [activeTab, setActiveTab] = useState<'stackAndMemory' | 'interrupt'>('stackAndMemory');
   const codeContainerRef = useRef<HTMLDivElement>(null);
+  const stackBlockRef = useRef<HTMLDivElement>(null);
+  const stackViewRef = useRef<HTMLDivElement>(null);
+  const svgContainerRef = useRef<HTMLDivElement>(null);
+  const [arrowPaths, setArrowPaths] = useState({ top: 'M 0,120 L 64,50', bottom: 'M 0,200 L 64,380' });
 
   useEffect(() => {
     if (codeContainerRef.current) {
@@ -20,6 +24,40 @@ export function IdePage() {
       }
     }
   }, [currentInstructionIndex]);
+
+  useEffect(() => {
+    const updateArrows = () => {
+      if (activeTab !== 'stackAndMemory') return;
+      if (!stackBlockRef.current || !stackViewRef.current || !svgContainerRef.current) return;
+      
+      const blockRect = stackBlockRef.current.getBoundingClientRect();
+      const viewRect = stackViewRef.current.getBoundingClientRect();
+      const svgRect = svgContainerRef.current.getBoundingClientRect();
+
+      // The SVG covers the whole container.
+      // So we calculate relative to the svgContainer.
+      const startX = blockRect.right - svgRect.left;
+      const startY1 = blockRect.top - svgRect.top;
+      const startY2 = blockRect.bottom - svgRect.top;
+      
+      const endX = viewRect.left - svgRect.left;
+      const endY1 = viewRect.top - svgRect.top + 10;
+      const endY2 = viewRect.bottom - svgRect.top - 10;
+
+      setArrowPaths({
+        top: `M ${startX},${startY1} L ${endX},${endY1}`,
+        bottom: `M ${startX},${startY2} L ${endX},${endY2}`
+      });
+    };
+
+    updateArrows();
+    const timer = setTimeout(updateArrows, 100);
+    window.addEventListener('resize', updateArrows);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateArrows);
+    };
+  }, [activeTab]);
 
   const toHex = (num: number) => '0x' + num.toString(16).padStart(8, '0').toUpperCase();
 
@@ -109,8 +147,8 @@ export function IdePage() {
       {/* Main Content Workspace */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* Left Panel: MIPS Code */}
-        <div className="w-5/12 flex flex-col border-r border-slate-300 shadow-sm z-10 bg-white">
+        {/* Left Panel 1: MIPS Code */}
+        <div className="w-[28%] flex flex-col border-r border-slate-300 shadow-sm z-10 bg-white">
           <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
             <span>MIPS Assembly</span>
           </div>
@@ -139,21 +177,32 @@ export function IdePage() {
             </div>
         </div>
 
+        {/* Left Panel 2: Registers */}
+        <div className="w-56 flex-shrink-0 flex flex-col border-r border-slate-300 shadow-sm z-10 bg-slate-50">
+          <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
+            <span>通用寄存器</span>
+          </div>
+          <div className="flex-1 overflow-auto p-2">
+            <div className="flex flex-col gap-1.5">
+              {registers.map((reg) => (
+                <div key={reg.name} className="flex justify-between items-center bg-white border border-slate-200 p-1 px-2 rounded text-xs hover:border-blue-300 hover:shadow-sm transition-all" title={reg.description}>
+                  <span className="font-mono font-bold text-blue-800 w-10">{reg.name}</span>
+                  <span className="font-mono text-slate-600">{toHex(reg.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Right Panel: Visualization State */}
-        <div className="w-7/12 flex flex-col bg-white">
+        <div className="flex-1 flex flex-col bg-white overflow-hidden">
           {/* Tabs */}
           <div className="flex bg-slate-100 border-b border-slate-300 px-2 pt-2">
             <button 
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'registers' ? 'bg-white text-blue-600 border-t border-x border-slate-300 border-b-white translate-y-px' : 'text-slate-500 hover:text-slate-700'}`}
-              onClick={() => setActiveTab('registers')}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'stackAndMemory' ? 'bg-white text-blue-600 border-t border-x border-slate-300 border-b-white translate-y-px' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setActiveTab('stackAndMemory')}
             >
-              寄存器 & 栈帧
-            </button>
-            <button 
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'memory' ? 'bg-white text-blue-600 border-t border-x border-slate-300 border-b-white translate-y-px' : 'text-slate-500 hover:text-slate-700'}`}
-              onClick={() => setActiveTab('memory')}
-            >
-              整体存储空间管理
+              栈帧 & 内存管理
             </button>
             <button 
               className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'interrupt' || interruptState.isActive ? 'bg-white text-amber-600 border-t border-x border-slate-300 border-b-white translate-y-px' : 'text-slate-500 hover:text-slate-700'}`}
@@ -167,24 +216,74 @@ export function IdePage() {
           {/* Tab Content */}
           <div className="flex-1 overflow-auto p-4 bg-white relative">
             
-            {/* Tab 1: Registers & Stack */}
-            {activeTab === 'registers' && (
-              <div className="flex h-full space-x-4">
-                {/* Registers Grid */}
-                <div className="flex-1 flex flex-col">
-                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">通用寄存器</h3>
-                  <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 overflow-auto pr-2 pb-4">
-                    {registers.map((reg) => (
-                      <div key={reg.name} className="flex justify-between items-center bg-slate-50 border border-slate-200 p-1.5 rounded text-sm hover:border-blue-300 hover:shadow-sm transition-all" title={reg.description}>
-                        <span className="font-mono font-bold text-blue-800 w-10">{reg.name}</span>
-                        <span className="font-mono text-slate-600">{toHex(reg.value)}</span>
+            {/* Tab 1: Stack & Memory */}
+            {activeTab === 'stackAndMemory' && (
+              <div className="flex h-full overflow-hidden relative">
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative" id="memory-layout-container">
+                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-4 -mt-12">
+                    {/* Diagram Top */}
+                    <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0 mt-8">
+                      <div 
+                        className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10"
+                        style={{ top: `${Math.min(85, Math.max(0, (0x7FFFFFFC - spVal) / 4 * 4))}px` }}
+                      >
+                        $sp <span className="text-red-600 mx-1">▶</span> {toHex(spVal)}
                       </div>
-                    ))}
+                      <div ref={stackBlockRef} className="h-24 bg-slate-300 border-b border-slate-400 flex flex-col items-center pt-2 relative">
+                        <span className="text-blue-800 font-bold text-sm">Stack</span>
+                        <div className="text-blue-800">↓</div>
+                      </div>
+                      <div className="h-16 bg-slate-100 flex items-center justify-center border-b border-slate-400">
+                        <div className="text-blue-800">↑</div>
+                      </div>
+                      <div className="h-8 bg-slate-300 border-b border-slate-400 flex items-center justify-center">
+                        <span className="text-blue-800 text-xs">Dynamic data</span>
+                      </div>
+                      <div className="h-12 bg-blue-100 border-b border-slate-400 flex items-center justify-center relative">
+                        <span className="text-blue-800 text-xs">Static data</span>
+                        <div className="absolute -left-[100px] -top-2 flex items-center text-black font-bold font-mono text-[10px] bg-white/80 px-1 rounded">
+                          $gp <span className="text-red-600 mx-1">▶</span> {toHex(0x10008000)}
+                        </div>
+                        <div className="absolute -left-[80px] -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
+                          {toHex(0x10000000)}
+                        </div>
+                      </div>
+                      <div className="h-32 bg-yellow-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                        <span className="text-blue-800 font-bold text-xs">252MB Text</span>
+                        <div 
+                          className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded"
+                          style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00400000) / 4 * 4))}px` }}
+                        >
+                          PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
+                        </div>
+                      </div>
+                      <div className="h-10 bg-slate-400 flex flex-col items-center justify-center relative">
+                        <span className="text-red-800 font-bold text-[10px]">4MB Reserved</span>
+                        <div className="absolute -left-24 -bottom-2 text-blue-800 font-mono text-[10px]">
+                          {toHex(0x00000000)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
+                {/* Connecting Visual SVG */}
+                <div ref={svgContainerRef} className="hidden lg:block absolute inset-0 pointer-events-none z-0">
+                   <svg width="100%" height="100%" className="absolute inset-0">
+                    <defs>
+                      <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                      </marker>
+                    </defs>
+                    {/* Upper arrow: from top-right of Stack block to top-left of Stack View */}
+                    <path d={arrowPaths.top} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" />
+                    {/* Lower arrow: from bottom-right of Stack block to bottom-left of Stack View */}
+                    <path d={arrowPaths.bottom} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" />
+                  </svg>
+                </div>
+
                 {/* Stack View */}
-                <div className="w-64 flex-shrink-0 flex flex-col border-l border-slate-200 pl-4">
+                <div ref={stackViewRef} className="w-64 flex-shrink-0 flex flex-col border-l border-slate-200 p-4 bg-slate-50 overflow-y-auto relative z-10 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)]">
                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 text-center">当前栈帧 (Stack)</h3>
                   <div className="flex-1 flex justify-center bg-slate-50 rounded border border-slate-200 p-4 overflow-hidden">
                     <div className="w-full border-2 border-slate-400 bg-white relative text-sm overflow-y-auto">
@@ -197,7 +296,6 @@ export function IdePage() {
                           )}
                           <span className="text-slate-400 text-[10px] block absolute top-1 left-1">{toHex(cell.address)}</span>
                           
-                          {/* Helper annotation for sp offsets */}
                            {spVal !== 0 && cell.address >= alignedSpVal && (
                              <span className="text-slate-300 text-[9px] block absolute bottom-1 left-1">
                                {cell.address - alignedSpVal}($sp)
@@ -211,68 +309,6 @@ export function IdePage() {
                       ))}
                       <div className="p-2 text-center font-mono text-slate-400 text-xs">
                         ↓ 向下增长 ↓
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Tab 2: Memory Layout */}
-            {activeTab === 'memory' && (
-              <div className="h-full flex items-center justify-center p-4">
-                <div className="flex w-full max-w-2xl h-full items-center justify-between">
-                  <div className="w-1/2 pr-6">
-                    <h3 className="text-lg font-bold mb-4 text-blue-900">MIPS的存储空间管理</h3>
-                    <ul className="space-y-3 text-sm text-slate-700">
-                      <li>• 栈在高地址区，从高到低增长</li>
-                      <li>• 过程调用时，生成当前“栈帧”</li>
-                      <li>• 动态数据(malloc)在堆中从低向高增长</li>
-                      <li>• $gp 固定设为 0x10008000</li>
-                      <li>• 静态数据区 from 0x10000000 处开始</li>
-                      <li>• 程序代码 from 0x00400000 处开始</li>
-                    </ul>
-                  </div>
-                  
-                  <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0">
-                    <div 
-                      className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10"
-                      style={{ top: `${Math.min(85, Math.max(0, (0x7FFFFFFC - spVal) / 4 * 4))}px` }}
-                    >
-                      $sp <span className="text-red-600 mx-1">▶</span> {toHex(spVal)}
-                    </div>
-                    <div className="h-24 bg-slate-300 border-b border-slate-400 flex flex-col items-center pt-2 relative">
-                      <span className="text-blue-800 font-bold text-sm">Stack</span>
-                      <div className="text-blue-800">↓</div>
-                    </div>
-                    <div className="h-16 bg-slate-100 flex items-center justify-center border-b border-slate-400">
-                      <div className="text-blue-800">↑</div>
-                    </div>
-                    <div className="h-8 bg-slate-300 border-b border-slate-400 flex items-center justify-center">
-                      <span className="text-blue-800 text-xs">Dynamic data</span>
-                    </div>
-                    <div className="h-12 bg-blue-100 border-b border-slate-400 flex items-center justify-center relative">
-                      <span className="text-blue-800 text-xs">Static data</span>
-                      <div className="absolute -left-28 -top-2 flex items-center text-black font-bold font-mono text-[10px]">
-                        $gp <span className="text-red-600 mx-1">▶</span> {toHex(0x10008000)}
-                      </div>
-                      <div className="absolute -left-24 -bottom-2 text-blue-800 font-mono text-[10px]">
-                        {toHex(0x10000000)}
-                      </div>
-                    </div>
-                    <div className="h-32 bg-yellow-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
-                      <span className="text-blue-800 font-bold text-xs">252MB Text</span>
-                      <div 
-                        className="absolute -left-28 flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10"
-                        style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00400000) / 4 * 4))}px` }}
-                      >
-                        PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
-                      </div>
-                    </div>
-                    <div className="h-10 bg-slate-400 flex flex-col items-center justify-center relative">
-                      <span className="text-red-800 font-bold text-[10px]">4MB Reserved</span>
-                      <div className="absolute -left-24 -bottom-2 text-blue-800 font-mono text-[10px]">
-                        {toHex(0x00000000)}
                       </div>
                     </div>
                   </div>
