@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw, StepForward, ArrowRight, Zap, FileCode } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
+import Editor from '@monaco-editor/react';
 
 export function IdePage() {
   const { 
+    sourceMipsCode, setSourceMipsCode,
     instructions, currentInstructionIndex, registers, pc, memory,
     stepExecution, resetExecution,
     interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
@@ -12,9 +14,16 @@ export function IdePage() {
   const [activeTab, setActiveTab] = useState<'stackAndMemory' | 'interrupt'>('stackAndMemory');
   const codeContainerRef = useRef<HTMLDivElement>(null);
   const stackBlockRef = useRef<HTMLDivElement>(null);
+  const staticDataBlockRef = useRef<HTMLDivElement>(null);
   const stackViewRef = useRef<HTMLDivElement>(null);
+  const dataSegmentViewRef = useRef<HTMLDivElement>(null);
   const svgContainerRef = useRef<HTMLDivElement>(null);
-  const [arrowPaths, setArrowPaths] = useState({ top: 'M 0,120 L 64,50', bottom: 'M 0,200 L 64,380' });
+  const [arrowPaths, setArrowPaths] = useState({ 
+    top: 'M 0,120 L 64,50', 
+    bottom: 'M 0,200 L 64,380',
+    dataTop: 'M 0,0 L 0,0',
+    dataBottom: 'M 0,0 L 0,0'
+  });
 
   useEffect(() => {
     if (codeContainerRef.current) {
@@ -44,9 +53,30 @@ export function IdePage() {
       const endY1 = viewRect.top - svgRect.top + 10;
       const endY2 = viewRect.bottom - svgRect.top - 10;
 
+      let dataTopPath = 'M 0,0 L 0,0';
+      let dataBottomPath = 'M 0,0 L 0,0';
+
+      if (staticDataBlockRef.current && dataSegmentViewRef.current) {
+        const dataBlockRect = staticDataBlockRef.current.getBoundingClientRect();
+        const dataViewRect = dataSegmentViewRef.current.getBoundingClientRect();
+        
+        const dataStartX = dataBlockRect.left - svgRect.left;
+        const dataStartY1 = dataBlockRect.top - svgRect.top;
+        const dataStartY2 = dataBlockRect.bottom - svgRect.top;
+        
+        const dataEndX = dataViewRect.left - svgRect.left;
+        const dataEndY1 = dataViewRect.top - svgRect.top + 10;
+        const dataEndY2 = dataViewRect.bottom - svgRect.top - 10;
+
+        dataTopPath = `M ${dataStartX},${dataStartY1} C ${dataStartX - 80},${dataStartY1} ${dataEndX - 80},${dataEndY1} ${dataEndX},${dataEndY1}`;
+        dataBottomPath = `M ${dataStartX},${dataStartY2} C ${dataStartX - 120},${dataStartY2} ${dataEndX - 120},${dataEndY2} ${dataEndX},${dataEndY2}`;
+      }
+
       setArrowPaths({
         top: `M ${startX},${startY1} L ${endX},${endY1}`,
-        bottom: `M ${startX},${startY2} L ${endX},${endY2}`
+        bottom: `M ${startX},${startY2} L ${endX},${endY2}`,
+        dataTop: dataTopPath,
+        dataBottom: dataBottomPath
       });
     };
 
@@ -149,8 +179,32 @@ export function IdePage() {
         
         {/* Left Panel 1: MIPS Code */}
         <div className="w-[28%] flex flex-col border-r border-slate-300 shadow-sm z-10 bg-white">
+          {/* Source MIPS Code (with pseudo instructions) */}
           <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
-            <span>MIPS Assembly</span>
+            <span>Source MIPS Code</span>
+          </div>
+          <div className="h-[40%] border-b border-slate-300">
+            <Editor
+              height="100%"
+              language="mips"
+              theme="light"
+              value={sourceMipsCode}
+              onChange={(value) => setSourceMipsCode(value || '')}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 12,
+                lineNumbers: 'on',
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                folding: false,
+                lineDecorationsWidth: 20,
+              }}
+            />
+          </div>
+
+          {/* Expanded MIPS Assembly */}
+          <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
+            <span>MIPS Assembly (Expanded)</span>
           </div>
           <div className="flex-1 overflow-auto font-mono text-sm p-2" ref={codeContainerRef}>
               {instructions.map((inst, index) => {
@@ -220,9 +274,9 @@ export function IdePage() {
             {activeTab === 'stackAndMemory' && (
               <div className="flex h-full overflow-hidden relative">
                 <div className="flex-1 flex flex-col items-center justify-start pt-12 p-4 relative" id="memory-layout-container">
-                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-8">
+                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-8 pb-12">
                     {/* Diagram Top */}
-                    <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0">
+                    <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
                       <div 
                         className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10"
                         style={{ top: `${Math.min(85, Math.max(0, (0x7FFFFFFC - spVal) / 4 * 4))}px` }}
@@ -239,7 +293,7 @@ export function IdePage() {
                       <div className="h-8 bg-slate-300 border-b border-slate-400 flex items-center justify-center">
                         <span className="text-blue-800 text-xs">Dynamic data</span>
                       </div>
-                      <div className="h-12 bg-blue-100 border-b border-slate-400 flex items-center justify-center relative">
+                      <div ref={staticDataBlockRef} className="h-12 bg-blue-100 border-b border-slate-400 flex items-center justify-center relative">
                         <span className="text-blue-800 text-xs">Static data</span>
                         <div className="absolute -left-[100px] -top-2 flex items-center text-black font-bold font-mono text-[10px] bg-white/80 px-1 rounded">
                           $gp <span className="text-red-600 mx-1">▶</span> {toHex(0x10008000)}
@@ -266,11 +320,19 @@ export function IdePage() {
                     </div>
                     
                     {/* .data section view */}
-                    <div className="w-full flex flex-col items-center mt-4">
+                    <div className="w-full flex flex-col items-center mt-8 relative z-10 ml-16">
                       <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x10000000)</h3>
-                      <div className="w-64 border border-slate-300 bg-white rounded overflow-hidden text-xs font-mono">
+                      <div 
+                        ref={dataSegmentViewRef} 
+                        className="w-64 border border-slate-300 bg-white rounded overflow-y-auto text-xs font-mono h-48 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)] relative"
+                        onScroll={() => {
+                          // Manually trigger the update arrows effect when data segment scrolls
+                          window.dispatchEvent(new Event('resize'));
+                        }}
+                      >
                         {/* We will display a few words from 0x10000000, growing upwards visually to match address increment */}
-                        {[20, 16, 12, 8, 4, 0].map(offset => {
+                        {Array.from({ length: 20 }).map((_, i) => {
+                          const offset = (19 - i) * 4;
                           const addr = 0x10000000 + offset;
                           const val = memory[addr];
                           return (
@@ -284,8 +346,8 @@ export function IdePage() {
                             </div>
                           );
                         })}
+                        <div className="p-2 text-center font-mono text-slate-400 text-xs sticky bottom-0 bg-white/90 backdrop-blur-sm border-t border-slate-200">↑ 向上增长 ↑</div>
                       </div>
-                      <div className="text-slate-400 text-xs mt-1 font-mono">↑ 向上增长 ↑</div>
                     </div>
                   </div>
                 </div>
@@ -297,11 +359,19 @@ export function IdePage() {
                       <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                         <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
                       </marker>
+                      <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" />
+                      </marker>
                     </defs>
+                    {/* Stack arrows */}
                     {/* Upper arrow: from top-right of Stack block to top-left of Stack View */}
-                    <path d={arrowPaths.top} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" />
+                    <path d={arrowPaths.top} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" strokeDasharray="4 2" />
                     {/* Lower arrow: from bottom-right of Stack block to bottom-left of Stack View */}
-                    <path d={arrowPaths.bottom} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" />
+                    <path d={arrowPaths.bottom} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" strokeDasharray="4 2" />
+                    
+                    {/* Data Segment arrows */}
+                    <path d={arrowPaths.dataTop} stroke="#3b82f6" strokeWidth="2" fill="none" markerEnd="url(#arrow-blue)" strokeDasharray="4 2" />
+                    <path d={arrowPaths.dataBottom} stroke="#3b82f6" strokeWidth="2" fill="none" markerEnd="url(#arrow-blue)" strokeDasharray="4 2" />
                   </svg>
                 </div>
 
