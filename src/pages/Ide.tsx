@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, StepForward, ArrowRight, Zap, FileCode } from 'lucide-react';
+import { RotateCcw, StepForward, ArrowRight, Zap, FileCode, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
 import Editor from '@monaco-editor/react';
 
@@ -8,7 +8,8 @@ export function IdePage() {
     sourceMipsCode, setSourceMipsCode,
     instructions, currentInstructionIndex, registers, pc, memory,
     stepExecution, resetExecution,
-    interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
+    interruptState, triggerInterrupt, stepInterrupt, resetInterrupt,
+    enableDelaySlot, toggleDelaySlot
   } = useMipsStore();
 
   const [activeTab, setActiveTab] = useState<'stackAndMemory' | 'interrupt'>('stackAndMemory');
@@ -160,6 +161,16 @@ export function IdePage() {
             PC: {toHex(pc)}
           </span>
           <div className="w-px h-6 bg-slate-700 mx-2"></div>
+          <button
+            onClick={toggleDelaySlot}
+            className={`flex items-center px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              enableDelaySlot ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+            }`}
+            title="开启/关闭延迟槽机制"
+          >
+            {enableDelaySlot ? <ToggleRight size={16} className="mr-1" /> : <ToggleLeft size={16} className="mr-1" />}
+            延迟槽
+          </button>
           <button
             onClick={handleReset}
             className="flex items-center px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"

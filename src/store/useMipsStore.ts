@@ -86,6 +86,8 @@ interface MipsState {
   registers: Register[];
   memory: Record<number, number>; // address -> value (word)
   pc: number;
+  delayedPc: number | null;
+  enableDelaySlot: boolean;
   isPlaying: boolean;
   currentInstructionIndex: number;
   
@@ -98,6 +100,7 @@ interface MipsState {
   stepExecution: () => void;
   resetExecution: () => void;
   togglePlay: () => void;
+  toggleDelaySlot: () => void;
   
   triggerInterrupt: () => void;
   stepInterrupt: () => void;
@@ -378,8 +381,15 @@ function expandPseudoInstructions(mips: string): string {
   let inDataSection = false;
 
   lines.forEach(line => {
-    const indentMatch = line.match(/^\s*/);
-    const indent = indentMatch ? indentMatch[0] : '';
+    let indentMatch = line.match(/^\s*/);
+    let indent = indentMatch ? indentMatch[0] : '';
+    // Normalize indentation to exactly 2 spaces if it's just spaces, otherwise keep it but limit to 2 for consistency
+    if (indent.length > 0 && !line.trim().startsWith('.') && !line.trim().endsWith(':')) {
+        indent = '  ';
+    } else if (line.trim().endsWith(':') || line.trim().startsWith('.')) {
+        indent = '';
+    }
+
     let text = line.trim();
     const cIdx = text.indexOf('#');
     let comment = '';
@@ -418,12 +428,12 @@ function expandPseudoInstructions(mips: string): string {
     const op = parts[0];
 
     const formatInst = (mnemonic: string, args: string) => {
-      const paddedMnemonic = mnemonic.padEnd(5, ' ');
+      const paddedMnemonic = mnemonic.padEnd(7, ' ');
       return `${indent}${prefix}${paddedMnemonic}${args}`;
     };
 
     const formatInstNoPrefix = (mnemonic: string, args: string) => {
-      const paddedMnemonic = mnemonic.padEnd(5, ' ');
+      const paddedMnemonic = mnemonic.padEnd(7, ' ');
       const prefixPadding = ' '.repeat(prefix.length);
       // Ensure there is at least a default indent (2 spaces) if the original line had none but it's an instruction
       const actualIndent = indent || '  ';
@@ -436,7 +446,7 @@ function expandPseudoInstructions(mips: string): string {
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
         const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `${reg}, ${addrHex}`)} ${comment}`.trimEnd());
+        expandedLines.push(`${formatInst('li', `${reg}, ${addrHex}`).padEnd(30, ' ')} ${comment}`.trimEnd());
       } else {
         expandedLines.push(line);
       }
@@ -447,7 +457,7 @@ function expandPseudoInstructions(mips: string): string {
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
         const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`)} ${comment}`.trimEnd());
+        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`).padEnd(30, ' ')} ${comment}`.trimEnd());
         expandedLines.push(formatInstNoPrefix('lw', `${reg}, 0($at)`));
       } else {
         expandedLines.push(line);
@@ -459,14 +469,25 @@ function expandPseudoInstructions(mips: string): string {
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
         const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`)} ${comment}`.trimEnd());
+        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`).padEnd(30, ' ')} ${comment}`.trimEnd());
         expandedLines.push(formatInstNoPrefix('sw', `${reg}, 0($at)`));
       } else {
         expandedLines.push(line);
       }
     } 
     else {
-      expandedLines.push(line);
+      // Clean up the formatting of the line itself if it's a regular instruction
+      if (op && !line.trim().startsWith('#') && !line.trim().startsWith('.') && !line.trim().endsWith(':')) {
+        const remainingArgs = text.substring(op.length).trim();
+        const formatted = formatInst(op, remainingArgs);
+        if (comment) {
+           expandedLines.push(`${formatted.padEnd(30, ' ')} ${comment}`.trimEnd());
+        } else {
+           expandedLines.push(formatted);
+        }
+      } else {
+        expandedLines.push(line);
+      }
     }
   });
 
@@ -548,6 +569,8 @@ export const useMipsStore = create<MipsState>((set, get) => {
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
     memory: initialMemory,
     pc: 0x00400000,
+    delayedPc: null,
+    enableDelaySlot: false,
     isPlaying: false,
     currentInstructionIndex: initialStartIndex,
     
@@ -573,6 +596,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
         pc: 0x00400000,
+        delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
         interruptState: { isActive: false, step: 0, savedPc: 0 }
@@ -596,6 +620,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
         pc: 0x00400000,
+        delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
       });
@@ -618,6 +643,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
         pc: 0x00400000,
+        delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
         interruptState: { isActive: false, step: 0, savedPc: 0 }
@@ -626,7 +652,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
     
     stepExecution: () => {
-      const { instructions, currentInstructionIndex, registers, memory, pc, labels } = get();
+      const { instructions, currentInstructionIndex, registers, memory, pc, delayedPc, enableDelaySlot, labels } = get();
       
       let nextIndex = currentInstructionIndex;
       
@@ -644,6 +670,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
       const newRegisters = JSON.parse(JSON.stringify(registers)) as Register[];
       const newMemory = { ...memory };
       let nextPc = pc + 4;
+      let nextDelayedPc: number | null = null;
       
       const getReg = (name: string) => newRegisters.find(r => r.name === name)?.value || 0;
       const setReg = (name: string, val: number) => {
@@ -679,25 +706,38 @@ export const useMipsStore = create<MipsState>((set, get) => {
           const { addr } = parseMemOp(parts[2], getReg);
           setReg(parts[1], newMemory[addr] || 0);
         } else if (op === 'jal') {
-          setReg('$ra', nextPc);
+          setReg('$ra', enableDelaySlot ? pc + 8 : nextPc);
           const target = labels[parts[1]];
-          if (target !== undefined) nextPc = target;
+          if (target !== undefined) {
+            if (enableDelaySlot) nextDelayedPc = target;
+            else nextPc = target;
+          }
         } else if (op === 'jr') {
-          nextPc = getReg(parts[1]);
+          if (enableDelaySlot) nextDelayedPc = getReg(parts[1]);
+          else nextPc = getReg(parts[1]);
         } else if (op === 'j') {
           const target = labels[parts[1]];
-          if (target !== undefined) nextPc = target;
+          if (target !== undefined) {
+            if (enableDelaySlot) nextDelayedPc = target;
+            else nextPc = target;
+          }
         } else if (op === 'slt') {
           setReg(parts[1], getReg(parts[2]) < getReg(parts[3]) ? 1 : 0);
         } else if (op === 'beq') {
           if (getReg(parts[1]) === getReg(parts[2])) {
             const target = labels[parts[3]];
-            if (target !== undefined) nextPc = target;
+            if (target !== undefined) {
+              if (enableDelaySlot) nextDelayedPc = target;
+              else nextPc = target;
+            }
           }
         } else if (op === 'bne') {
           if (getReg(parts[1]) !== getReg(parts[2])) {
             const target = labels[parts[3]];
-            if (target !== undefined) nextPc = target;
+            if (target !== undefined) {
+              if (enableDelaySlot) nextDelayedPc = target;
+              else nextPc = target;
+            }
           }
         } else if (op === 'sll') {
           setReg(parts[1], getReg(parts[2]) << parseInt(parts[3], 10));
@@ -708,12 +748,18 @@ export const useMipsStore = create<MipsState>((set, get) => {
         } else if (op === 'bgt') {
           if (getReg(parts[1]) > getReg(parts[2])) {
             const target = labels[parts[3]];
-            if (target !== undefined) nextPc = target;
+            if (target !== undefined) {
+              if (enableDelaySlot) nextDelayedPc = target;
+              else nextPc = target;
+            }
           }
         } else if (op === 'bgtz') {
           if (getReg(parts[1]) > 0) {
             const target = labels[parts[2]];
-            if (target !== undefined) nextPc = target;
+            if (target !== undefined) {
+              if (enableDelaySlot) nextDelayedPc = target;
+              else nextPc = target;
+            }
           }
         } else if (op === 'mult') {
           const res = getReg(parts[1]) * getReg(parts[2]);
@@ -729,9 +775,16 @@ export const useMipsStore = create<MipsState>((set, get) => {
             set({ isPlaying: false });
             nextPc = instructions[instructions.length - 1].address + 4; // Skip past end
           }
+        } else if (op === 'nop') {
+          // Do nothing
         }
       } catch (e) {
         console.error("Simulation error on:", text, e);
+      }
+      
+      // If we had a delayed branch/jump from the previous instruction, apply it now
+      if (delayedPc !== null) {
+        nextPc = delayedPc;
       }
       
       // Update UI index based on nextPc
@@ -745,6 +798,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: newRegisters,
         memory: newMemory,
         pc: nextPc,
+        delayedPc: nextDelayedPc,
         currentInstructionIndex: nextUiIndex,
       });
     },
@@ -758,6 +812,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
         pc: 0x00400000,
+        delayedPc: null,
         currentInstructionIndex: Math.max(0, get().instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
       });
@@ -765,6 +820,8 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
     
     togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
+    
+    toggleDelaySlot: () => set((state) => ({ enableDelaySlot: !state.enableDelaySlot })),
     
     triggerInterrupt: () => set((state) => ({
       interruptState: {
