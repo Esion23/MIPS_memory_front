@@ -58,6 +58,8 @@ export const INITIAL_REGISTERS: Register[] = [
   { name: '$sp', value: 0x7FFFFFFC, description: '栈指针' },
   { name: '$fp', value: 0x7FFFFFFC, description: '帧指针' },
   { name: '$ra', value: 0, description: '返回地址' },
+  { name: '$hi', value: 0, description: '乘法高位/除法余数' },
+  { name: '$lo', value: 0, description: '乘法低位/除法商' },
 ];
 
 export interface Instruction {
@@ -105,184 +107,207 @@ interface MipsState {
 
 export const EXAMPLES = [
   {
-    name: "基本加法调用",
+    name: "Fibonacci (数组与循环)",
     cCode: `int main() {
-  int a = 5;
-  int b = 10;
-  int c = add(a, b);
-  return 0;
-}
-
-int add(int x, int y) {
-  return x + y;
-}`,
-    mipsCode: `.text
-main:
-  # prologue (need 16 bytes for $ra, a, b, c)
-  addi $sp, $sp, -16
-  sw   $ra, 12($sp)
-  
-  # a = 5
-  li   $t0, 5
-  sw   $t0, 8($sp)
-  
-  # b = 10
-  li   $t0, 10
-  sw   $t0, 4($sp)
-  
-  # call add(a, b)
-  lw   $a0, 8($sp)
-  lw   $a1, 4($sp)
-  jal  add
-  sw   $v0, 0($sp) # c = add(a,b)
-  
-  # epilogue
-  li   $v0, 0
-  lw   $ra, 12($sp)
-  addi $sp, $sp, 16
-  jr   $ra
-
-add:
-  # prologue (no need to allocate stack, just leaf function)
-  # x + y
-  add  $v0, $a0, $a1
-  
-  # epilogue
-  jr   $ra`
-  },
-  {
-    name: "数组求和循环",
-    cCode: `int main() {
-  int arr[3] = {1, 2, 3};
-  int sum = 0;
-  for(int i = 0; i < 3; i++) {
-    sum += arr[i];
+  int size = 12;
+  int fibs[12];
+  fibs[0] = 1;
+  fibs[1] = 1;
+  for(int i = 0; i < size - 2; i++) {
+    fibs[i+2] = fibs[i] + fibs[i+1];
   }
-  return sum;
+  return 0;
 }`,
     mipsCode: `.data
-array:  .word 10, 20, 30
-sum:    .word 0
+fibs: .space 48
+size: .word 12
 
 .text
 main:
-  # prologue
-  addi $sp, $sp, -24
-  sw   $ra, 20($sp)
-  
-  # i = 0
-  li   $t2, 0
-  sw   $t2, 0($sp)
-  
-  # load base address of array into $t8 (simulating .data at 0x10000000)
-  # Actually, we will just use absolute addresses for simplicity in this emulator
-  # array is at 0x10000000, sum is at 0x1000000C
-  la   $t8, array
-  
-  # init sum in memory to 0
-  li   $t1, 0
-  sw   $t1, sum
+  la   $t0, fibs              # load address of array
+  la   $t5, size              # load address of size variable
+  lw   $t5, 0($t5)            # load array size
+  li   $t2, 1                 # 1 is first and second Fib. number
+  sw   $t2, 0($t0)            # F[0] = 1
+  sw   $t2, 4($t0)            # F[1] = F[0] = 1
+  addi $t1, $t5, -2           # Counter for loop
 
-loop_start:
-  lw   $t2, 0($sp)
-  li   $t3, 3
-  slt  $t4, $t2, $t3
-  beq  $t4, $zero, loop_end
+loop:
+  lw   $t3, 0($t0)            # Get value from array F[n]
+  lw   $t4, 4($t0)            # Get value from array F[n+1]
+  add  $t2, $t3, $t4          # $t2 = F[n] + F[n+1]
+  sw   $t2, 8($t0)            # Store F[n+2]
+  addi $t0, $t0, 4            # increment address
+  addi $t1, $t1, -1           # decrement loop counter
+  bgtz $t1, loop              # repeat if not finished yet.
   
-  # sum += array[i]
-  sll  $t5, $t2, 2
-  add  $t6, $t8, $t5
-  lw   $t7, 0($t6)      # load array[i] from .data
-  
-  lw   $t1, sum         # load sum from .data
-  add  $t1, $t1, $t7
-  sw   $t1, sum         # store sum back to .data
-  
-  # i++
-  lw   $t2, 0($sp)
-  addi $t2, $t2, 1
-  sw   $t2, 0($sp)
-  j    loop_start
-
-loop_end:
-  lw   $v0, sum         # return sum
-  lw   $ra, 20($sp)
-  addi $sp, $sp, 24
-  jr   $ra`
+  li   $v0, 10                # system call for exit
+  syscall`
   },
   {
-    name: "斐波那契递归调用",
+    name: "二维数组操作",
     cCode: `int main() {
-  int result = fib(3);
-  return result;
-}
+  int matrix[8][8];
+  int rows = 3; // 模拟输入
+  int cols = 3; // 模拟输入
+  
+  for(int i = 0; i < rows; i++) {
+    for(int j = 0; j < cols; j++) {
+       matrix[i][j] = 5; // 模拟输入
+    }
+  }
+  return 0;
+}`,
+    mipsCode: `.data
+# 为了演示简化，分配 64 words 用于 8x8 matrix (256 bytes)
+matrix: .space 256
 
-int fib(int n) {
-  if (n == 0) return 0;
-  if (n == 1) return 1;
-  return fib(n - 1) + fib(n - 2);
+.text
+main:
+  li  $s0, 3                      # 模拟输入行数
+  li  $s1, 3                      # 模拟输入列数
+  li  $t0, 0                      # $t0 = i = 0
+  la  $s2, matrix                 # 基地址
+
+in_i:
+  beq $t0, $s0, in_i_end
+  li  $t1, 0                      # $t1 = j = 0
+
+in_j:
+  beq $t1, $s1, in_j_end
+  li  $v0, 5                      # 模拟输入的值 (原本是 syscall 5)
+  
+  # getindex($t2, $t0, $t1) -> $t2 = (i * 8 + j) * 4
+  sll $t2, $t0, 3
+  add $t2, $t2, $t1
+  sll $t2, $t2, 2
+  
+  add $t3, $s2, $t2               # 计算实际地址
+  sw  $v0, 0($t3)                 # matrix[i][j] = 5
+  
+  addi $t1, $t1, 1
+  j   in_j
+
+in_j_end:
+  addi $t0, $t0, 1
+  j   in_i
+
+in_i_end:
+  li  $v0, 10
+  syscall`
+  },
+  {
+    name: "基本循环与累加",
+    cCode: `int main() {
+  int n = 5; // 模拟输入
+  int sum = 0;
+  for(int i = 1; i <= n; i++) {
+    sum += i;
+  }
+  return sum;
 }`,
     mipsCode: `.text
 main:
-  # prologue (need 8 bytes for $ra and local var 'result')
-  addi $sp, $sp, -8
-  sw   $ra, 4($sp)
+  li  $s0, 5              # 模拟输入 n = 5
+  li  $s1, 0              # $s1 用于存储累加的值，$s1 = 0
+  li  $t0, 1              # $t0 是循环变量
 
-  # call fib(3)
-  li   $a0, 3
-  jal  fib
-  
-  # store result
-  sw   $v0, 0($sp)
-  
-  # epilogue
-  lw   $ra, 4($sp)
-  addi $sp, $sp, 8
-  jr   $ra
+loop:
+  bgt $t0, $s0, loop_end  # 当 $t0 > $s0 的时候跳转
+  add $s1, $s1, $t0       # $s1 = $s1 + $t0
+  addi $t0, $t0, 1        # $t0 = $t0 + 1
+  j   loop                
 
-fib:
-  # prologue (need 12 bytes: $ra, arg $a0, and space for temp fib(n-1))
-  addi $sp, $sp, -12
-  sw   $ra, 8($sp)
-  
-  # save arg n
-  sw   $a0, 4($sp)
-  
-  # if (n == 0) return 0
-  lw   $v1, 4($sp)
-  bne  $v1, $zero, check_one
-  li   $v0, 0
-  j    fib_end
-  
-check_one:
-  # if (n == 1) return 1
-  lw   $v1, 4($sp)
-  li   $t0, 1
-  bne  $v1, $t0, recursive_case
-  li   $v0, 1
-  j    fib_end
+loop_end:
+  move $a0, $s1           # 赋值，$a0 = $s1
+  li  $v0, 10             # 结束程序
+  syscall`
+  },
+  {
+    name: "一维数组赋值",
+    cCode: `int main() {
+  int array[10];
+  int n = 3; // 模拟输入
+  for(int i=0; i<n; i++) {
+    array[i] = 8; // 模拟输入
+  }
+  return 0;
+}`,
+    mipsCode: `.data
+array: .space 40
 
-recursive_case:
-  # fib(n - 1)
-  lw   $a0, 4($sp)
-  addi $a0, $a0, -1
-  jal  fib
-  sw   $v0, 0($sp)  # save fib(n-1) result
-  
-  # fib(n - 2)
-  lw   $a0, 4($sp)
-  addi $a0, $a0, -2
-  jal  fib
-  
-  # return fib(n-1) + fib(n-2)
-  lw   $t1, 0($sp)
-  add  $v0, $t1, $v0
+.text
+main:
+  li $s0, 3                  # 模拟输入 n = 3
+  li $t0, 0                  # $t0 循环变量 i = 0
+  la $s1, array              # 数组基地址
 
-fib_end:
-  # epilogue
-  lw   $ra, 8($sp)
-  addi $sp, $sp, 12
-  jr   $ra`
+loop_in:
+  beq $t0, $s0, loop_in_end  # $t0 == $s0 的时候跳出循环
+  li $v0, 8                  # 模拟输入的数组元素值
+  
+  sll $t1, $t0, 2            # $t1 = $t0 * 4
+  add $t2, $s1, $t1          # 计算实际地址
+  sw $v0, 0($t2)             # array[i] = 8
+  
+  addi $t0, $t0, 1           # $t0 = $t0 + 1
+  j loop_in
+
+loop_in_end:
+  li $v0, 10
+  syscall`
+  },
+  {
+    name: "递归函数调用 (阶乘)",
+    cCode: `int factorial(int n) {
+  if (n == 1) return 1;
+  return n * factorial(n - 1);
+}
+
+int main() {
+  return factorial(4); // 模拟输入4
+}`,
+    mipsCode: `.text
+main:
+  li      $s0, 4          # 模拟输入 n = 4
+
+  move    $a0, $s0
+  jal     factorial
+  move    $s1, $v0        # $s1 保存阶乘结果
+
+  li      $v0, 10
+  syscall
+
+factorial:
+  # 入栈
+  addi    $sp, $sp, -8
+  sw      $ra, 4($sp)
+  sw      $t0, 0($sp)
+  
+  # 将参数存入临时寄存器中
+  move    $t0, $a0
+  
+  # 基准情况
+  li      $t2, 1
+  bne     $t0, $t2, else
+  li      $v0, 1
+  j       if_end  
+  
+  # 递归情况  
+else:
+  addi    $t1, $t0, -1
+  move    $a0, $t1
+  jal     factorial
+  mult    $t0, $v0
+  mflo    $v0
+
+if_end:
+  # 出栈
+  lw      $t0, 0($sp)
+  lw      $ra, 4($sp)
+  addi    $sp, $sp, 8
+  # 返回
+  jr      $ra`
   }
 ];
 
@@ -327,6 +352,19 @@ function parseInitialMemory(mips: string): { memory: Record<number, number>, dat
             currentDataAddress += 4;
           }
         });
+      }
+      
+      const spaceMatch = text.match(/\.space\s+(\d+)/);
+      if (spaceMatch) {
+        const bytes = parseInt(spaceMatch[1], 10);
+        if (!isNaN(bytes)) {
+          // Initialize allocated space to 0, align to word boundary
+          const words = Math.ceil(bytes / 4);
+          for (let i = 0; i < words; i++) {
+            memory[currentDataAddress] = 0;
+            currentDataAddress += 4;
+          }
+        }
       }
     }
   });
@@ -663,6 +701,34 @@ export const useMipsStore = create<MipsState>((set, get) => {
           }
         } else if (op === 'sll') {
           setReg(parts[1], getReg(parts[2]) << parseInt(parts[3], 10));
+        } else if (op === 'move') {
+          setReg(parts[1], getReg(parts[2]));
+        } else if (op === 'subi') {
+          setReg(parts[1], getReg(parts[2]) - parseInt(parts[3], 10));
+        } else if (op === 'bgt') {
+          if (getReg(parts[1]) > getReg(parts[2])) {
+            const target = labels[parts[3]];
+            if (target !== undefined) nextPc = target;
+          }
+        } else if (op === 'bgtz') {
+          if (getReg(parts[1]) > 0) {
+            const target = labels[parts[2]];
+            if (target !== undefined) nextPc = target;
+          }
+        } else if (op === 'mult') {
+          const res = getReg(parts[1]) * getReg(parts[2]);
+          // For simplicity, just store in $lo and ignore 64-bit overflow for small numbers
+          setReg('$lo', res);
+          setReg('$hi', 0);
+        } else if (op === 'mflo') {
+          setReg(parts[1], getReg('$lo'));
+        } else if (op === 'syscall') {
+          const v0 = getReg('$v0');
+          if (v0 === 10) {
+            // Exit program
+            set({ isPlaying: false });
+            nextPc = instructions[instructions.length - 1].address + 4; // Skip past end
+          }
         }
       } catch (e) {
         console.error("Simulation error on:", text, e);

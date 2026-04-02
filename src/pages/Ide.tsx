@@ -35,6 +35,12 @@ export function IdePage() {
   }, [currentInstructionIndex]);
 
   useEffect(() => {
+    if (dataSegmentViewRef.current) {
+      dataSegmentViewRef.current.scrollTop = dataSegmentViewRef.current.scrollHeight;
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     const updateArrows = () => {
       if (activeTab !== 'stackAndMemory') return;
       if (!stackBlockRef.current || !stackViewRef.current || !svgContainerRef.current) return;
@@ -120,6 +126,15 @@ export function IdePage() {
       isSp: addr === alignedSpVal,
     });
   }
+
+  // 计算 .data 段的最大地址
+  const maxDataAddr = Object.keys(memory)
+    .map(Number)
+    .filter(addr => addr >= 0x10000000 && addr < 0x10010000)
+    .reduce((max, addr) => Math.max(max, addr), 0x10000000);
+  
+  // 确保至少显示 20 个字（80字节），或者显示到最大的分配地址
+  const dataWordCount = Math.max(20, (maxDataAddr - 0x10000000) / 4 + 1);
 
   return (
     <div className="flex flex-col h-screen bg-slate-100 overflow-hidden">
@@ -273,8 +288,8 @@ export function IdePage() {
             {/* Tab 1: Stack & Memory */}
             {activeTab === 'stackAndMemory' && (
               <div className="flex h-full overflow-hidden relative">
-                <div className="flex-1 flex flex-col items-center justify-start pt-12 p-4 relative" id="memory-layout-container">
-                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-8 pb-12">
+                <div className="flex-1 flex flex-col items-center justify-start pt-2 p-4 relative" id="memory-layout-container">
+                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-4 pb-4">
                     {/* Diagram Top */}
                     <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
                       <div 
@@ -320,7 +335,7 @@ export function IdePage() {
                     </div>
                     
                     {/* .data section view */}
-                    <div className="w-full flex flex-col items-center mt-8 relative z-10 ml-16">
+                    <div className="w-full flex flex-col items-center mt-4 relative z-10 ml-16">
                       <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x10000000)</h3>
                       <div 
                         ref={dataSegmentViewRef} 
@@ -331,8 +346,8 @@ export function IdePage() {
                         }}
                       >
                         {/* We will display a few words from 0x10000000, growing upwards visually to match address increment */}
-                        {Array.from({ length: 20 }).map((_, i) => {
-                          const offset = (19 - i) * 4;
+                        {Array.from({ length: dataWordCount }).map((_, i) => {
+                          const offset = (dataWordCount - 1 - i) * 4;
                           const addr = 0x10000000 + offset;
                           const val = memory[addr];
                           return (
