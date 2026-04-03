@@ -245,11 +245,11 @@ export function IdePage() {
                     key={inst.id} 
                     className={`flex px-2 py-0.5 rounded ${isActive ? 'bg-blue-100 border-l-4 border-blue-500' : 'border-l-4 border-transparent'}`}
                   >
-                    <span className="w-20 text-slate-400 select-none text-xs leading-5">
+                    <span className="w-24 text-slate-400 select-none text-xs leading-5 flex-shrink-0">
                       {inst.type === 'code' ? toHex(inst.address) : ''}
                     </span>
                     <span className={`whitespace-pre ${colorClass}`}>
-                      {inst.text}
+                      {inst.type === 'label' ? inst.text.trim() : '  ' + inst.text.trim()}
                     </span>
                   </div>
                 );

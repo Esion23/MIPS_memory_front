@@ -381,15 +381,8 @@ function expandPseudoInstructions(mips: string): string {
   let inDataSection = false;
 
   lines.forEach(line => {
-    let indentMatch = line.match(/^\s*/);
-    let indent = indentMatch ? indentMatch[0] : '';
-    // Normalize indentation to exactly 2 spaces if it's just spaces, otherwise keep it but limit to 2 for consistency
-    if (indent.length > 0 && !line.trim().startsWith('.') && !line.trim().endsWith(':')) {
-        indent = '  ';
-    } else if (line.trim().endsWith(':') || line.trim().startsWith('.')) {
-        indent = '';
-    }
-
+    const indentMatch = line.match(/^\s*/);
+    const indent = indentMatch ? indentMatch[0] : '';
     let text = line.trim();
     const cIdx = text.indexOf('#');
     let comment = '';
@@ -428,16 +421,13 @@ function expandPseudoInstructions(mips: string): string {
     const op = parts[0];
 
     const formatInst = (mnemonic: string, args: string) => {
-      const paddedMnemonic = mnemonic.padEnd(7, ' ');
-      return `${indent}${prefix}${paddedMnemonic}${args}`;
+      const paddedMnemonic = mnemonic.padEnd(8, ' ');
+      return `${paddedMnemonic}${args}`;
     };
 
     const formatInstNoPrefix = (mnemonic: string, args: string) => {
-      const paddedMnemonic = mnemonic.padEnd(7, ' ');
-      const prefixPadding = ' '.repeat(prefix.length);
-      // Ensure there is at least a default indent (2 spaces) if the original line had none but it's an instruction
-      const actualIndent = indent || '  ';
-      return `${actualIndent}${prefixPadding}${paddedMnemonic}${args}`;
+      const paddedMnemonic = mnemonic.padEnd(8, ' ');
+      return `${paddedMnemonic}${args}`;
     };
     
     // expand la
@@ -446,7 +436,7 @@ function expandPseudoInstructions(mips: string): string {
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
         const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `${reg}, ${addrHex}`).padEnd(30, ' ')} ${comment}`.trimEnd());
+        expandedLines.push(`${formatInst('li', `${reg}, ${addrHex}`)} ${comment}`.trimEnd());
       } else {
         expandedLines.push(line);
       }
@@ -457,7 +447,7 @@ function expandPseudoInstructions(mips: string): string {
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
         const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`).padEnd(30, ' ')} ${comment}`.trimEnd());
+        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`)} ${comment}`.trimEnd());
         expandedLines.push(formatInstNoPrefix('lw', `${reg}, 0($at)`));
       } else {
         expandedLines.push(line);
@@ -469,25 +459,14 @@ function expandPseudoInstructions(mips: string): string {
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
         const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`).padEnd(30, ' ')} ${comment}`.trimEnd());
+        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`)} ${comment}`.trimEnd());
         expandedLines.push(formatInstNoPrefix('sw', `${reg}, 0($at)`));
       } else {
         expandedLines.push(line);
       }
     } 
     else {
-      // Clean up the formatting of the line itself if it's a regular instruction
-      if (op && !line.trim().startsWith('#') && !line.trim().startsWith('.') && !line.trim().endsWith(':')) {
-        const remainingArgs = text.substring(op.length).trim();
-        const formatted = formatInst(op, remainingArgs);
-        if (comment) {
-           expandedLines.push(`${formatted.padEnd(30, ' ')} ${comment}`.trimEnd());
-        } else {
-           expandedLines.push(formatted);
-        }
-      } else {
-        expandedLines.push(line);
-      }
+      expandedLines.push(line);
     }
   });
 
@@ -513,24 +492,38 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
     }
     
     if (pureCode === '') {
-      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'comment' });
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'comment' });
     } else if (pureCode === '.data') {
       inDataSection = true;
-      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (pureCode === '.text') {
       inDataSection = false;
-      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (inDataSection) {
       // In .data section, lines like "array: .word 10, 20" shouldn't get PC addresses
-      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (pureCode.startsWith('.')) {
-      instructions.push({ id: `line-${index}`, address: 0, text: line, type: 'directive' });
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (pureCode.endsWith(':')) {
       const labelName = pureCode.substring(0, pureCode.length - 1);
       labels[labelName] = currentAddress;
-      instructions.push({ id: `line-${index}`, address: currentAddress, text: line, type: 'label' });
+      instructions.push({ id: `line-${index}`, address: currentAddress, text: text, type: 'label' });
     } else {
-      instructions.push({ id: `line-${index}`, address: currentAddress, text: line, type: 'code' });
+      // For code, let's also try to align mnemonics if they aren't already
+      let formattedText = pureCode;
+      const spaceIdx = pureCode.indexOf(' ');
+      const tabIdx = pureCode.indexOf('\t');
+      const splitIdx = (spaceIdx === -1) ? tabIdx : (tabIdx === -1 ? spaceIdx : Math.min(spaceIdx, tabIdx));
+      
+      if (splitIdx !== -1) {
+        const op = pureCode.substring(0, splitIdx);
+        const args = pureCode.substring(splitIdx).trim();
+        formattedText = op.padEnd(8, ' ') + args;
+      } else {
+        formattedText = pureCode.padEnd(8, ' ');
+      }
+
+      instructions.push({ id: `line-${index}`, address: currentAddress, text: formattedText, type: 'code' });
       currentAddress += 4;
     }
   });
