@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { piplineClient } from '../api/piplineClient';
 
 export interface Register {
   name: string;
@@ -16,11 +17,12 @@ export interface MemorySegment {
 }
 
 export const MEMORY_SEGMENTS: MemorySegment[] = [
-  { name: 'Stack', startAddress: 0x7FFFFFFF, endAddress: 0x70000000, size: 256 * 1024 * 1024, color: 'bg-gray-300', description: '向下增长，存储局部变量和返回地址' },
-  { name: 'Dynamic data (Heap)', startAddress: 0x10010000, endAddress: 0x6FFFFFFF, size: 1.5 * 1024 * 1024 * 1024, color: 'bg-blue-100', description: '向上增长，动态分配的内存 (malloc)' },
-  { name: 'Static data', startAddress: 0x10000000, endAddress: 0x1000FFFF, size: 64 * 1024, color: 'bg-blue-200', description: '全局变量和静态变量，gp通常指向 0x10008000' },
-  { name: 'Text (Code)', startAddress: 0x00400000, endAddress: 0x0FFFFFFF, size: 252 * 1024 * 1024, color: 'bg-yellow-100', description: '存储程序指令，PC初始值为 0x00400000' },
-  { name: 'Reserved', startAddress: 0x00000000, endAddress: 0x003FFFFF, size: 4 * 1024 * 1024, color: 'bg-red-200', description: '操作系统保留区域' },
+  { name: 'MMIO', startAddress: 0x00007f00, endAddress: 0x00007FFF, size: 256, color: 'bg-purple-100', description: 'Memory Mapped I/O' },
+  { name: 'Exception Handler', startAddress: 0x00004180, endAddress: 0x00004FFF, size: 4096, color: 'bg-orange-100', description: '异常处理程序' },
+  { name: 'Text (Code)', startAddress: 0x00003000, endAddress: 0x00003FFF, size: 4096, color: 'bg-yellow-100', description: '存储程序指令，PC初始值为 0x00003000' },
+  { name: 'Stack', startAddress: 0x00002ffc, endAddress: 0x00002000, size: 4096, color: 'bg-gray-300', description: '向下增长，存储局部变量和返回地址' },
+  { name: 'Heap', startAddress: 0x00002000, endAddress: 0x00002000, size: 0, color: 'bg-green-50', description: '向上增长，动态分配的内存' },
+  { name: 'Static data', startAddress: 0x00000000, endAddress: 0x00001FFF, size: 8192, color: 'bg-blue-200', description: '全局变量和静态变量，gp通常指向 0x00001800' },
 ];
 
 export const INITIAL_REGISTERS: Register[] = [
@@ -52,11 +54,11 @@ export const INITIAL_REGISTERS: Register[] = [
   { name: '$t9', value: 0, description: '临时变量' },
   { name: '$k0', value: 0, description: '操作系统内核保留' },
   { name: '$k1', value: 0, description: '操作系统内核保留' },
-  { name: '$gp', value: 0x10008000, description: '全局指针' },
-  // 教学中为了严谨和可视化的字对齐，我们直接将 $sp 初始化为 0x7FFFFFFC
+  { name: '$gp', value: 0x00001800, description: '全局指针' },
+  // 教学中为了严谨和可视化的字对齐，我们直接将 $sp 初始化为 0x00002ffc
   // 因为 0x7FFFFFFF 在 MIPS 中虽然是用户空间最高地址，但实际存字(word)时必须字对齐
-  { name: '$sp', value: 0x7FFFFFFC, description: '栈指针' },
-  { name: '$fp', value: 0x7FFFFFFC, description: '帧指针' },
+  { name: '$sp', value: 0x00002ffc, description: '栈指针' },
+  { name: '$fp', value: 0x00002ffc, description: '帧指针' },
   { name: '$ra', value: 0, description: '返回地址' },
   { name: '$hi', value: 0, description: '乘法高位/除法余数' },
   { name: '$lo', value: 0, description: '乘法低位/除法商' },
@@ -87,7 +89,6 @@ interface MipsState {
   memory: Record<number, number>; // address -> value (word)
   pc: number;
   delayedPc: number | null;
-  enableDelaySlot: boolean;
   isPlaying: boolean;
   currentInstructionIndex: number;
   
@@ -100,7 +101,6 @@ interface MipsState {
   stepExecution: () => void;
   resetExecution: () => void;
   togglePlay: () => void;
-  toggleDelaySlot: () => void;
   
   triggerInterrupt: () => void;
   stepInterrupt: () => void;
@@ -143,6 +143,7 @@ loop:
   addi $t0, $t0, 4            # increment address
   addi $t1, $t1, -1           # decrement loop counter
   bgtz $t1, loop              # repeat if not finished yet.
+  nop
   
   li   $v0, 10                # system call for exit
   syscall`
@@ -174,10 +175,12 @@ main:
 
 in_i:
   beq $t0, $s0, in_i_end
+  nop
   li  $t1, 0                      # $t1 = j = 0
 
 in_j:
   beq $t1, $s1, in_j_end
+  nop
   li  $v0, 5                      # 模拟输入的值 (原本是 syscall 5)
   
   # getindex($t2, $t0, $t1) -> $t2 = (i * 8 + j) * 4
@@ -190,10 +193,12 @@ in_j:
   
   addi $t1, $t1, 1
   j   in_j
+  nop
 
 in_j_end:
   addi $t0, $t0, 1
   j   in_i
+  nop
 
 in_i_end:
   li  $v0, 10
@@ -217,9 +222,11 @@ main:
 
 loop:
   bgt $t0, $s0, loop_end  # 当 $t0 > $s0 的时候跳转
+  nop
   add $s1, $s1, $t0       # $s1 = $s1 + $t0
   addi $t0, $t0, 1        # $t0 = $t0 + 1
   j   loop                
+  nop
 
 loop_end:
   move $a0, $s1           # 赋值，$a0 = $s1
@@ -247,6 +254,7 @@ main:
 
 loop_in:
   beq $t0, $s0, loop_in_end  # $t0 == $s0 的时候跳出循环
+  nop
   li $v0, 8                  # 模拟输入的数组元素值
   
   sll $t1, $t0, 2            # $t1 = $t0 * 4
@@ -255,6 +263,7 @@ loop_in:
   
   addi $t0, $t0, 1           # $t0 = $t0 + 1
   j loop_in
+  nop
 
 loop_in_end:
   li $v0, 10
@@ -276,6 +285,7 @@ main:
 
   move    $a0, $s0
   jal     factorial
+  nop
   move    $s1, $v0        # $s1 保存阶乘结果
 
   li      $v0, 10
@@ -293,14 +303,17 @@ factorial:
   # 基准情况
   li      $t2, 1
   bne     $t0, $t2, else
+  nop
   li      $v0, 1
   j       if_end  
+  nop
   
   # 递归情况  
 else:
   addi    $t1, $t0, -1
   move    $a0, $t1
   jal     factorial
+  nop
   mult    $t0, $v0
   mflo    $v0
 
@@ -310,7 +323,8 @@ if_end:
   lw      $ra, 4($sp)
   addi    $sp, $sp, 8
   # 返回
-  jr      $ra`
+  jr      $ra
+  nop`
   }
 ];
 
@@ -319,7 +333,7 @@ function parseInitialMemory(mips: string): { memory: Record<number, number>, dat
   const memory: Record<number, number> = {};
   const dataLabels: Record<string, number> = {};
   let inDataSection = false;
-  let currentDataAddress = 0x10000000;
+  let currentDataAddress = 0x00000000;
   
   mips.split('\n').forEach(line => {
     let text = line.trim();
@@ -430,24 +444,49 @@ function expandPseudoInstructions(mips: string): string {
       return `${paddedMnemonic}${args}`;
     };
     
+    // helper for generating li
+    const expandLi = (reg: string, val: number) => {
+      const isSigned16 = val >= -32768 && val <= 32767;
+      if (isSigned16) {
+        expandedLines.push(`${formatInst('addi', `${reg}, $zero, ${val}`)} ${comment}`.trimEnd());
+      } else if (val >= 0 && val <= 65535) {
+        expandedLines.push(`${formatInst('ori', `${reg}, $zero, ${val}`)} ${comment}`.trimEnd());
+      } else {
+        const upper = (val >>> 16) & 0xFFFF;
+        const lower = val & 0xFFFF;
+        expandedLines.push(`${formatInst('lui', `${reg}, ${upper}`)} ${comment}`.trimEnd());
+        if (lower !== 0) {
+          expandedLines.push(formatInstNoPrefix('ori', `${reg}, ${reg}, ${lower}`));
+        }
+      }
+    };
+
     // expand la
     if (op === 'la' && parts.length === 3) {
       const reg = parts[1];
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
-        const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `${reg}, ${addrHex}`)} ${comment}`.trimEnd());
+        expandLi(reg, dataLabels[label]);
       } else {
         expandedLines.push(line);
       }
     } 
+    // expand li
+    else if (op === 'li' && parts.length === 3) {
+      const reg = parts[1];
+      const valStr = parts[2];
+      let val = parseInt(valStr, 10);
+      if (valStr.toLowerCase().startsWith('0x')) {
+        val = parseInt(valStr, 16);
+      }
+      expandLi(reg, val);
+    }
     // expand lw with label
     else if (op === 'lw' && parts.length === 3 && !parts[2].includes('(') && isNaN(parseInt(parts[2]))) {
       const reg = parts[1];
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
-        const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`)} ${comment}`.trimEnd());
+        expandLi('$at', dataLabels[label]);
         expandedLines.push(formatInstNoPrefix('lw', `${reg}, 0($at)`));
       } else {
         expandedLines.push(line);
@@ -458,13 +497,25 @@ function expandPseudoInstructions(mips: string): string {
       const reg = parts[1];
       const label = parts[2];
       if (dataLabels[label] !== undefined) {
-        const addrHex = '0x' + dataLabels[label].toString(16).toUpperCase();
-        expandedLines.push(`${formatInst('li', `$at, ${addrHex}`)} ${comment}`.trimEnd());
+        expandLi('$at', dataLabels[label]);
         expandedLines.push(formatInstNoPrefix('sw', `${reg}, 0($at)`));
       } else {
         expandedLines.push(line);
       }
     } 
+    // expand move
+    else if (op === 'move' && parts.length === 3) {
+      expandedLines.push(`${formatInst('add', `${parts[1]}, ${parts[2]}, $zero`)} ${comment}`.trimEnd());
+    }
+    // expand subi
+    else if (op === 'subi' && parts.length === 4) {
+      expandedLines.push(`${formatInst('addi', `${parts[1]}, ${parts[2]}, -${parts[3]}`)} ${comment}`.trimEnd());
+    }
+    // expand bgt
+    else if (op === 'bgt' && parts.length === 4) {
+      expandedLines.push(`${formatInst('slt', `$at, ${parts[2]}, ${parts[1]}`)} ${comment}`.trimEnd());
+      expandedLines.push(formatInstNoPrefix('bne', `$at, $zero, ${parts[3]}`));
+    }
     else {
       expandedLines.push(line);
     }
@@ -477,7 +528,7 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
   const lines = mips.split('\n');
   const instructions: Instruction[] = [];
   const labels: Record<string, number> = {};
-  let currentAddress = 0x00400000;
+  let currentAddress = 0x00003000;
   let inDataSection = false;
   
   lines.forEach((line, index) => {
@@ -543,6 +594,47 @@ function parseMemOp(operand: string, getReg: (n: string) => number): { addr: num
   return { addr: 0 };
 }
 
+function extractTextSegment(expandedMips: string): string {
+  const lines = expandedMips.split('\n');
+  const textLines: string[] = [];
+  let inDataSection = false;
+
+  lines.forEach(line => {
+    let text = line.trim();
+    if (text === '.data') {
+      inDataSection = true;
+      return;
+    }
+    if (text === '.text') {
+      inDataSection = false;
+      return;
+    }
+    if (!inDataSection) {
+      textLines.push(line);
+    }
+  });
+
+  return textLines.join('\n');
+}
+
+function toHexString(num: number): string {
+  let hex = num.toString(16);
+  return hex.padStart(8, '0');
+}
+
+const preparePiplinePayload = (expandedMips: string, memoryRecord: Record<number, number>) => {
+  const asm_source = extractTextSegment(expandedMips);
+  const initial_memory: Record<string, string> = {};
+  for (const [addr, val] of Object.entries(memoryRecord)) {
+    initial_memory[toHexString(parseInt(addr, 10))] = toHexString(val);
+  }
+  const initial_registers: Record<string, string> = {
+    '28': toHexString(0x00001800), // gp
+    '29': toHexString(0x00002ffc)  // sp
+  };
+  return { asm_source, initial_memory, initial_registers };
+};
+
 export const useMipsStore = create<MipsState>((set, get) => {
   
   const initialSource = EXAMPLES[0].mipsCode;
@@ -561,9 +653,8 @@ export const useMipsStore = create<MipsState>((set, get) => {
     
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
     memory: initialMemory,
-    pc: 0x00400000,
+    pc: 0x00003000,
     delayedPc: null,
-    enableDelaySlot: false,
     isPlaying: false,
     currentInstructionIndex: initialStartIndex,
     
@@ -576,10 +667,17 @@ export const useMipsStore = create<MipsState>((set, get) => {
     setCCode: (code) => set({ cCode: code }),
     
     
-    setSourceMipsCode: (code) => {
+    setSourceMipsCode: async (code) => {
       const expanded = expandPseudoInstructions(code);
       const parsed = parseMipsToInstructions(expanded);
       const { memory } = parseInitialMemory(code);
+
+      const payload = preparePiplinePayload(expanded, memory);
+      try {
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+      } catch (e) {
+        console.error("Failed to load program to pipline backend:", e);
+      }
 
       set({
         sourceMipsCode: code,
@@ -588,7 +686,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
-        pc: 0x00400000,
+        pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
@@ -600,11 +698,19 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
 
     
-    compileToMips: () => {
+    compileToMips: async () => {
       const example = EXAMPLES.find(e => get().cCode.includes(e.cCode.substring(0, 20))) || EXAMPLES[0];
       const expanded = expandPseudoInstructions(example.mipsCode);
       const parsed = parseMipsToInstructions(expanded);
       const { memory } = parseInitialMemory(example.mipsCode);
+
+      const payload = preparePiplinePayload(expanded, memory);
+      try {
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+      } catch (e) {
+        console.error("Failed to load program to pipline backend:", e);
+      }
+
       set({
         sourceMipsCode: example.mipsCode,
         mipsCode: expanded,
@@ -612,7 +718,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
-        pc: 0x00400000,
+        pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
@@ -621,11 +727,18 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
 
     
-    loadExample: (index: number) => {
+    loadExample: async (index: number) => {
       const ex = EXAMPLES[index];
       const expanded = expandPseudoInstructions(ex.mipsCode);
       const parsed = parseMipsToInstructions(expanded);
       const { memory } = parseInitialMemory(ex.mipsCode);
+
+      const payload = preparePiplinePayload(expanded, memory);
+      try {
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+      } catch (e) {
+        console.error("Failed to load program to pipline backend:", e);
+      }
 
       set({
         cCode: ex.cCode,
@@ -635,7 +748,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
-        pc: 0x00400000,
+        pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
@@ -644,167 +757,75 @@ export const useMipsStore = create<MipsState>((set, get) => {
     },
 
     
-    stepExecution: () => {
-      const { instructions, currentInstructionIndex, registers, memory, pc, delayedPc, enableDelaySlot, labels } = get();
-      
-      let nextIndex = currentInstructionIndex;
-      
-      // Skip non-code
-      while (nextIndex < instructions.length && instructions[nextIndex].type !== 'code') {
-        nextIndex++;
-      }
-      
-      if (nextIndex >= instructions.length) {
-        set({ isPlaying: false });
-        return;
-      }
-      
-      const currentInst = instructions[nextIndex];
-      const newRegisters = JSON.parse(JSON.stringify(registers)) as Register[];
-      const newMemory = { ...memory };
-      let nextPc = pc + 4;
-      let nextDelayedPc: number | null = null;
-      
-      const getReg = (name: string) => newRegisters.find(r => r.name === name)?.value || 0;
-      const setReg = (name: string, val: number) => {
-        if (name === '$zero') return;
-        const idx = newRegisters.findIndex(r => r.name === name);
-        if (idx !== -1) newRegisters[idx].value = val;
-      };
-
-      // Strip comment
-      let text = currentInst.text;
-      const cIdx = text.indexOf('#');
-      if (cIdx !== -1) text = text.substring(0, cIdx);
-      text = text.trim();
-      
-      const parts = text.split(/[\s,]+/).filter(Boolean);
-      const op = parts[0];
-      
+    stepExecution: async () => {
       try {
-        if (op === 'li') {
-          const valStr = parts[2];
-          const val = valStr.startsWith('0x') ? parseInt(valStr, 16) : parseInt(valStr, 10);
-          setReg(parts[1], val);
-        } else if (op === 'addi') {
-          setReg(parts[1], getReg(parts[2]) + parseInt(parts[3], 10));
-        } else if (op === 'add') {
-          setReg(parts[1], getReg(parts[2]) + getReg(parts[3]));
-        } else if (op === 'sw') {
-          const { addr } = parseMemOp(parts[2], getReg);
-          const val = getReg(parts[1]);
-          // Use Object.assign to create a new reference to trigger React re-render
-          Object.assign(newMemory, { [addr]: val });
-        } else if (op === 'lw') {
-          const { addr } = parseMemOp(parts[2], getReg);
-          setReg(parts[1], newMemory[addr] || 0);
-        } else if (op === 'jal') {
-          setReg('$ra', enableDelaySlot ? pc + 8 : nextPc);
-          const target = labels[parts[1]];
-          if (target !== undefined) {
-            if (enableDelaySlot) nextDelayedPc = target;
-            else nextPc = target;
+        const snap = await piplineClient.step_cycle() as any;
+        
+        const newRegisters = JSON.parse(JSON.stringify(get().registers)) as Register[];
+        for (const [idxStr, regInfo] of Object.entries(snap.registers || {})) {
+          const idx = parseInt(idxStr, 10);
+          if (newRegisters[idx] && (regInfo as any).value) {
+            newRegisters[idx].value = parseInt((regInfo as any).value, 16);
           }
-        } else if (op === 'jr') {
-          if (enableDelaySlot) nextDelayedPc = getReg(parts[1]);
-          else nextPc = getReg(parts[1]);
-        } else if (op === 'j') {
-          const target = labels[parts[1]];
-          if (target !== undefined) {
-            if (enableDelaySlot) nextDelayedPc = target;
-            else nextPc = target;
-          }
-        } else if (op === 'slt') {
-          setReg(parts[1], getReg(parts[2]) < getReg(parts[3]) ? 1 : 0);
-        } else if (op === 'beq') {
-          if (getReg(parts[1]) === getReg(parts[2])) {
-            const target = labels[parts[3]];
-            if (target !== undefined) {
-              if (enableDelaySlot) nextDelayedPc = target;
-              else nextPc = target;
-            }
-          }
-        } else if (op === 'bne') {
-          if (getReg(parts[1]) !== getReg(parts[2])) {
-            const target = labels[parts[3]];
-            if (target !== undefined) {
-              if (enableDelaySlot) nextDelayedPc = target;
-              else nextPc = target;
-            }
-          }
-        } else if (op === 'sll') {
-          setReg(parts[1], getReg(parts[2]) << parseInt(parts[3], 10));
-        } else if (op === 'move') {
-          setReg(parts[1], getReg(parts[2]));
-        } else if (op === 'subi') {
-          setReg(parts[1], getReg(parts[2]) - parseInt(parts[3], 10));
-        } else if (op === 'bgt') {
-          if (getReg(parts[1]) > getReg(parts[2])) {
-            const target = labels[parts[3]];
-            if (target !== undefined) {
-              if (enableDelaySlot) nextDelayedPc = target;
-              else nextPc = target;
-            }
-          }
-        } else if (op === 'bgtz') {
-          if (getReg(parts[1]) > 0) {
-            const target = labels[parts[2]];
-            if (target !== undefined) {
-              if (enableDelaySlot) nextDelayedPc = target;
-              else nextPc = target;
-            }
-          }
-        } else if (op === 'mult') {
-          const res = getReg(parts[1]) * getReg(parts[2]);
-          // For simplicity, just store in $lo and ignore 64-bit overflow for small numbers
-          setReg('$lo', res);
-          setReg('$hi', 0);
-        } else if (op === 'mflo') {
-          setReg(parts[1], getReg('$lo'));
-        } else if (op === 'syscall') {
-          const v0 = getReg('$v0');
-          if (v0 === 10) {
-            // Exit program
-            set({ isPlaying: false });
-            nextPc = instructions[instructions.length - 1].address + 4; // Skip past end
-          }
-        } else if (op === 'nop') {
-          // Do nothing
+        }
+        
+        const newMemory = { ...get().memory };
+        for (const [addrHex, valHex] of Object.entries(snap.memory || {})) {
+          newMemory[parseInt(addrHex, 16)] = parseInt(valHex as string, 16);
+        }
+        
+        let nextPc = parseInt(snap.pc, 16);
+        
+        // Use MEM stage as macro PC if it has a valid instruction, else EX, ID, IF
+        if (snap.pipeline?.MEM && !snap.pipeline.MEM.is_bubble) {
+          nextPc = parseInt(snap.pipeline.MEM.pc, 16);
+        } else if (snap.pipeline?.EX && !snap.pipeline.EX.is_bubble) {
+          nextPc = parseInt(snap.pipeline.EX.pc, 16);
+        } else if (snap.pipeline?.ID && !snap.pipeline.ID.is_bubble) {
+          nextPc = parseInt(snap.pipeline.ID.pc, 16);
+        } else if (snap.pipeline?.IF && !snap.pipeline.IF.is_bubble) {
+          nextPc = parseInt(snap.pipeline.IF.pc, 16);
+        }
+        
+        const { instructions } = get();
+        let nextUiIndex = instructions.findIndex(inst => inst.address === nextPc && inst.type === 'code');
+        if (nextUiIndex === -1) {
+          nextUiIndex = instructions.length;
+        }
+        
+        set({
+          registers: newRegisters,
+          memory: newMemory,
+          pc: nextPc,
+          currentInstructionIndex: nextUiIndex,
+          isPlaying: !snap.outofbound && get().isPlaying
+        });
+        
+        if (snap.outofbound) {
+          set({ isPlaying: false });
         }
       } catch (e) {
-        console.error("Simulation error on:", text, e);
+        console.error("Simulation step error:", e);
+        set({ isPlaying: false });
       }
-      
-      // If we had a delayed branch/jump from the previous instruction, apply it now
-      if (delayedPc !== null) {
-        nextPc = delayedPc;
-      }
-      
-      // Update UI index based on nextPc
-      let nextUiIndex = instructions.findIndex(inst => inst.address === nextPc && inst.type === 'code');
-      if (nextUiIndex === -1) {
-        // If we can't find it exactly (e.g. program end), just set to end
-        nextUiIndex = instructions.length;
-      }
-      
-      set({
-        registers: newRegisters,
-        memory: newMemory,
-        pc: nextPc,
-        delayedPc: nextDelayedPc,
-        currentInstructionIndex: nextUiIndex,
-      });
     },
     
     
-    resetExecution: () => {
+    resetExecution: async () => {
       const { sourceMipsCode } = get();
       const { memory } = parseInitialMemory(sourceMipsCode);
+      const expanded = expandPseudoInstructions(sourceMipsCode);
+      const payload = preparePiplinePayload(expanded, memory);
+      try {
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+      } catch (e) {
+        console.error("Failed to load program on pipline backend during reset:", e);
+      }
 
       set({
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         memory,
-        pc: 0x00400000,
+        pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, get().instructions.findIndex(i => i.type === 'code')),
         isPlaying: false,
@@ -813,8 +834,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
     
     togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
-    
-    toggleDelaySlot: () => set((state) => ({ enableDelaySlot: !state.enableDelaySlot })),
     
     triggerInterrupt: () => set((state) => ({
       interruptState: {
@@ -853,3 +872,8 @@ export const useMipsStore = create<MipsState>((set, get) => {
     }),
   };
 });
+
+// Initialize the backend simulator on startup
+if (typeof window !== 'undefined') {
+  useMipsStore.getState().resetExecution();
+}

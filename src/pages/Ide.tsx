@@ -8,8 +8,7 @@ export function IdePage() {
     sourceMipsCode, setSourceMipsCode,
     instructions, currentInstructionIndex, registers, pc, memory,
     stepExecution, resetExecution,
-    interruptState, triggerInterrupt, stepInterrupt, resetInterrupt,
-    enableDelaySlot, toggleDelaySlot
+    interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
   } = useMipsStore();
 
   const [activeTab, setActiveTab] = useState<'stackAndMemory' | 'interrupt'>('stackAndMemory');
@@ -113,14 +112,14 @@ export function IdePage() {
 
   const spVal = registers.find(r => r.name === '$sp')?.value || 0;
   
-  const stackCells = [];
+  const stackCells: { address: number, value: number | undefined, isSp: boolean }[] = [];
   // MIPS 中栈通常从高地址向下增长，且是字对齐(4字节)的。
-  const startAddr = 0x7FFFFFFC;
+  const startAddr = 0x00002ffc;
   // 严格渲染到当前的字对齐边界
-  const alignedSpVal = spVal;
+  const alignedSpVal = spVal - (spVal % 4);
   
   // 确保遍历条件能包含到 alignedSpVal
-  for (let addr = startAddr; addr >= alignedSpVal && addr > 0x7FFFFF00; addr -= 4) {
+  for (let addr = startAddr; addr >= alignedSpVal && addr > 0x00002f00; addr -= 4) {
     stackCells.push({
       address: addr,
       value: memory[addr], // can be undefined
@@ -131,11 +130,11 @@ export function IdePage() {
   // 计算 .data 段的最大地址
   const maxDataAddr = Object.keys(memory)
     .map(Number)
-    .filter(addr => addr >= 0x10000000 && addr < 0x10010000)
-    .reduce((max, addr) => Math.max(max, addr), 0x10000000);
+    .filter(addr => addr >= 0x00000000 && addr < 0x00001800)
+    .reduce((max, addr) => Math.max(max, addr), 0x00000000);
   
   // 确保至少显示 20 个字（80字节），或者显示到最大的分配地址
-  const dataWordCount = Math.max(20, (maxDataAddr - 0x10000000) / 4 + 1);
+  const dataWordCount = Math.max(20, (maxDataAddr - 0x00000000) / 4 + 1);
 
   return (
     <div className="flex flex-col h-screen bg-slate-100 overflow-hidden">
@@ -161,16 +160,6 @@ export function IdePage() {
             PC: {toHex(pc)}
           </span>
           <div className="w-px h-6 bg-slate-700 mx-2"></div>
-          <button
-            onClick={toggleDelaySlot}
-            className={`flex items-center px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              enableDelaySlot ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-            }`}
-            title="开启/关闭延迟槽机制"
-          >
-            {enableDelaySlot ? <ToggleRight size={16} className="mr-1" /> : <ToggleLeft size={16} className="mr-1" />}
-            延迟槽
-          </button>
           <button
             onClick={handleReset}
             className="flex items-center px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
@@ -303,43 +292,70 @@ export function IdePage() {
                   <div className="flex flex-col w-full max-w-md items-center justify-start space-y-4 pb-4">
                     {/* Diagram Top */}
                     <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
-                      <div 
-                        className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10"
-                        style={{ top: `${Math.min(85, Math.max(0, (0x7FFFFFFC - spVal) / 4 * 4))}px` }}
-                      >
-                        $sp <span className="text-red-600 mx-1">▶</span> {toHex(spVal)}
-                      </div>
-                      <div ref={stackBlockRef} className="h-24 bg-slate-300 border-b border-slate-400 flex flex-col items-center pt-2 relative">
-                        <span className="text-blue-800 font-bold text-sm">Stack</span>
-                        <div className="text-blue-800">↓</div>
-                      </div>
-                      <div className="h-16 bg-slate-100 flex items-center justify-center border-b border-slate-400">
-                        <div className="text-blue-800">↑</div>
-                      </div>
-                      <div className="h-8 bg-slate-300 border-b border-slate-400 flex items-center justify-center">
-                        <span className="text-blue-800 text-xs">Dynamic data</span>
-                      </div>
-                      <div ref={staticDataBlockRef} className="h-12 bg-blue-100 border-b border-slate-400 flex items-center justify-center relative">
-                        <span className="text-blue-800 text-xs">Static data</span>
-                        <div className="absolute -left-[100px] -top-2 flex items-center text-black font-bold font-mono text-[10px] bg-white/80 px-1 rounded">
-                          $gp <span className="text-red-600 mx-1">▶</span> {toHex(0x10008000)}
-                        </div>
-                        <div className="absolute -left-[80px] -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
-                          {toHex(0x10000000)}
+                      
+                      {/* MMIO */}
+                      <div className="h-12 bg-purple-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                        <span className="text-blue-800 font-bold text-xs">MMIO</span>
+                        <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
+                          {toHex(0x00007f00)}
                         </div>
                       </div>
+                    
+                      {/* Exception Handler */}
+                      <div className="h-12 bg-orange-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                        <span className="text-blue-800 font-bold text-xs">Exception Handler</span>
+                        <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
+                          {toHex(0x00004180)}
+                        </div>
+                      </div>
+                    
+                      {/* Text Segment */}
                       <div className="h-32 bg-yellow-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
-                        <span className="text-blue-800 font-bold text-xs">252MB Text</span>
+                        <span className="text-blue-800 font-bold text-xs">.text Segment</span>
+                        <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
+                          {toHex(0x00003000)}
+                        </div>
+                        {/* PC Indicator */}
                         <div 
-                          className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded"
-                          style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00400000) / 4 * 4))}px` }}
+                          className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
+                          style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00003000) / 4 * 4))}px` }}
                         >
                           PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
                         </div>
                       </div>
-                      <div className="h-10 bg-slate-400 flex flex-col items-center justify-center relative">
-                        <span className="text-red-800 font-bold text-[10px]">4MB Reserved</span>
-                        <div className="absolute -left-24 -bottom-2 text-blue-800 font-mono text-[10px]">
+                    
+                      {/* Stack Segment */}
+                      <div ref={stackBlockRef} className="h-24 bg-slate-300 border-b border-slate-400 flex flex-col items-center pt-2 relative">
+                        <span className="text-blue-800 font-bold text-sm">Stack</span>
+                        <div className="text-blue-800">↓</div>
+                        <div className="absolute -left-20 -top-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
+                          {toHex(0x00003000)}
+                        </div>
+                        {/* SP Indicator */}
+                        <div 
+                          className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
+                          style={{ top: `${Math.min(85, Math.max(0, (0x00002ffc - spVal) / 4 * 4))}px` }}
+                        >
+                          $sp <span className="text-red-600 mx-1">▶</span> {toHex(spVal)}
+                        </div>
+                      </div>
+                    
+                      {/* Heap Segment */}
+                      <div className="h-16 bg-green-50 flex flex-col items-center justify-center border-b border-slate-400 relative">
+                        <div className="text-blue-800 text-xs mb-1">↑</div>
+                        <span className="text-blue-800 font-bold text-xs">Heap</span>
+                        <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
+                          {toHex(0x00002000)}
+                        </div>
+                      </div>
+                    
+                      {/* Data Segment */}
+                      <div ref={staticDataBlockRef} className="h-24 bg-blue-100 flex flex-col items-center justify-end pb-2 relative">
+                        <span className="text-blue-800 text-xs mb-8">.data Segment</span>
+                        <div className="absolute -left-[100px] top-2 flex items-center text-black font-bold font-mono text-[10px] bg-white/80 px-1 rounded shadow-sm">
+                          $gp <span className="text-red-600 mx-1">▶</span> {toHex(0x00001800)}
+                        </div>
+                        <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00000000)}
                         </div>
                       </div>
@@ -347,7 +363,7 @@ export function IdePage() {
                     
                     {/* .data section view */}
                     <div className="w-full flex flex-col items-center mt-4 relative z-10 ml-16">
-                      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x10000000)</h3>
+                      <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x00000000)</h3>
                       <div 
                         ref={dataSegmentViewRef} 
                         className="w-64 border border-slate-300 bg-white rounded overflow-y-auto text-xs font-mono h-48 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)] relative"
@@ -356,10 +372,10 @@ export function IdePage() {
                           window.dispatchEvent(new Event('resize'));
                         }}
                       >
-                        {/* We will display a few words from 0x10000000, growing upwards visually to match address increment */}
+                        {/* We will display a few words from 0x00000000, growing upwards visually to match address increment */}
                         {Array.from({ length: dataWordCount }).map((_, i) => {
                           const offset = (dataWordCount - 1 - i) * 4;
-                          const addr = 0x10000000 + offset;
+                          const addr = 0x00000000 + offset;
                           const val = memory[addr];
                           return (
                             <div key={addr} className="flex border-b border-slate-200 last:border-b-0 hover:bg-slate-50">
