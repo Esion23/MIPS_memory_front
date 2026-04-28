@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw, StepForward, ArrowRight, Zap, FileCode } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
 import Editor from '@monaco-editor/react';
+import { TimerView } from '../components/TimerView';
 
 export function IdePage() {
   const { 
@@ -17,12 +18,15 @@ export function IdePage() {
   const staticDataBlockRef = useRef<HTMLDivElement>(null);
   const stackViewRef = useRef<HTMLDivElement>(null);
   const dataSegmentViewRef = useRef<HTMLDivElement>(null);
+  const mmioBlockRef = useRef<HTMLDivElement>(null);
+  const timersBlockRef = useRef<HTMLDivElement>(null);
   const svgContainerRef = useRef<HTMLDivElement>(null);
   const [arrowPaths, setArrowPaths] = useState({ 
     top: 'M 0,120 L 64,50', 
     bottom: 'M 0,200 L 64,380',
     dataTop: 'M 0,0 L 0,0',
-    dataBottom: 'M 0,0 L 0,0'
+    dataBottom: 'M 0,0 L 0,0',
+    mmioArrow: 'M 0,0 L 0,0'
   });
 
   useEffect(() => {
@@ -61,6 +65,7 @@ export function IdePage() {
 
       let dataTopPath = 'M 0,0 L 0,0';
       let dataBottomPath = 'M 0,0 L 0,0';
+      let mmioPath = 'M 0,0 L 0,0';
 
       if (staticDataBlockRef.current && dataSegmentViewRef.current) {
         const dataBlockRect = staticDataBlockRef.current.getBoundingClientRect();
@@ -78,11 +83,27 @@ export function IdePage() {
         dataBottomPath = `M ${dataStartX},${dataStartY2} C ${dataStartX - 120},${dataStartY2} ${dataEndX - 120},${dataEndY2} ${dataEndX},${dataEndY2}`;
       }
 
+      if (mmioBlockRef.current && timersBlockRef.current) {
+        const mmioRect = mmioBlockRef.current.getBoundingClientRect();
+        const timersRect = timersBlockRef.current.getBoundingClientRect();
+        
+        // From MMIO block left edge
+        const mmioStartX = mmioRect.left - svgRect.left;
+        const mmioStartY = mmioRect.top + mmioRect.height / 2 - svgRect.top;
+        
+        // To Timers block right edge
+        const timersEndX = timersRect.right - svgRect.left + 5;
+        const timersEndY = timersRect.top + timersRect.height / 2 - svgRect.top;
+
+        mmioPath = `M ${mmioStartX},${mmioStartY} C ${mmioStartX - 50},${mmioStartY} ${timersEndX + 50},${timersEndY} ${timersEndX},${timersEndY}`;
+      }
+
       setArrowPaths({
         top: `M ${startX},${startY1} L ${endX},${endY1}`,
         bottom: `M ${startX},${startY2} L ${endX},${endY2}`,
         dataTop: dataTopPath,
-        dataBottom: dataBottomPath
+        dataBottom: dataBottomPath,
+        mmioArrow: mmioPath
       });
     };
 
@@ -321,6 +342,12 @@ export function IdePage() {
                 </div>
               </div>
             </div>
+
+            {/* Timer Registers placed here */}
+            <div ref={timersBlockRef}>
+              <TimerView />
+            </div>
+
           </div>
         </div>
 
@@ -355,7 +382,7 @@ export function IdePage() {
                     <div className="w-52 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
                       
                       {/* MMIO */}
-                      <div className="h-12 bg-purple-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                      <div ref={mmioBlockRef} className="h-12 bg-purple-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
                         <span className="text-blue-800 font-bold text-xs">MMIO</span>
                         <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00007f00)}
@@ -456,8 +483,8 @@ export function IdePage() {
                 </div>
 
                 {/* Connecting Visual SVG */}
-                <div ref={svgContainerRef} className="hidden lg:block absolute inset-0 pointer-events-none z-0">
-                   <svg width="100%" height="100%" className="absolute inset-0">
+                <div ref={svgContainerRef} className="hidden lg:block absolute inset-0 pointer-events-none z-0" style={{ overflow: 'visible' }}>
+                   <svg width="100%" height="100%" className="absolute inset-0" style={{ overflow: 'visible' }}>
                     <defs>
                       <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                         <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
@@ -475,6 +502,9 @@ export function IdePage() {
                     {/* Data Segment arrows */}
                     <path d={arrowPaths.dataTop} stroke="#3b82f6" strokeWidth="2" fill="none" markerEnd="url(#arrow-blue)" strokeDasharray="4 2" />
                     <path d={arrowPaths.dataBottom} stroke="#3b82f6" strokeWidth="2" fill="none" markerEnd="url(#arrow-blue)" strokeDasharray="4 2" />
+
+                    {/* MMIO arrow to Timers */}
+                    <path d={arrowPaths.mmioArrow} stroke="#ef4444" strokeWidth="2" fill="none" markerEnd="url(#arrow-red)" strokeDasharray="4 2" />
                   </svg>
                 </div>
 

@@ -5,6 +5,7 @@ export interface SnapshotSchema {
   pipeline: Record<string, any>;
   registers: Record<string, { name: string; value: string }>;
   memory: Record<string, string>;
+  timers: { [key: string]: { ctrl: string, preset: string, count: string } };
   events: any;
 }
 

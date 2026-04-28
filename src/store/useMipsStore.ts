@@ -84,6 +84,12 @@ export interface InterruptState {
   savedPc: number;
 }
 
+export interface TimerState {
+  ctrl: string;
+  preset: string;
+  count: string;
+}
+
 interface MipsState {
   cCode: string;
   sourceMipsCode: string;
@@ -94,6 +100,7 @@ interface MipsState {
   registers: Register[];
   cp0Registers: Register[];
   memory: Record<number, number>; // address -> value (word)
+  timers: { [key: string]: TimerState };
   pc: number;
   delayedPc: number | null;
   isPlaying: boolean;
@@ -116,6 +123,61 @@ interface MipsState {
 }
 
 export const EXAMPLES = [
+  {
+    name: "Timer 0 (定时器倒计时)",
+    cCode: `int main() {
+  int* timer0_ctrl = (int*)0x00007F00;
+  int* timer0_preset = (int*)0x00007F04;
+  int* timer0_count = (int*)0x00007F08;
+  
+  // 设置倒计时 5 个周期
+  *timer0_preset = 5;
+  // 启动 Timer0 (Mode 0, Enable)
+  *timer0_ctrl = 1;
+  
+  // 等待倒计时结束
+  while (*timer0_count > 0) {
+    // wait
+  }
+  
+  return 0xbeef;
+}`,
+    mipsCode: `main:
+  # 1. 初始化 Timer 0 基地址 0x00007F00
+  lui $t0, 0x0000
+  ori $t0, $t0, 0x7F00
+  
+  # 2. 设置 PRESET 倒计时初值 = 5
+  addi $t1, $zero, 5
+  sw $t1, 4($t0)        # 写入 PRESET 寄存器
+  
+  # 3. 启动 Timer 0 (CTRL = 1: Enable=1, Mode=0, IM=0)
+  addi $t1, $zero, 1
+  sw $t1, 0($t0)        # 写入 CTRL 寄存器
+  
+  # 等待 Timer 完成内部状态加载 (IDLE -> LOAD -> CNT)
+  nop
+  nop
+  nop
+
+wait_loop:
+  # 4. 读取当前 COUNT 值
+  lw $t2, 8($t0)        # 读取 COUNT 寄存器
+  
+  # 5. 检查 COUNT 是否 <= 0
+  blez $t2, timer_done
+  nop                   # 延迟槽
+  
+  # 6. 继续等待
+  j wait_loop
+  nop                   # 延迟槽
+
+timer_done:
+  # 7. 定时器结束，设置完成标志 0xBEEF 到 $v0
+  lui $v0, 0x0000
+  ori $v0, $v0, 0xBEEF
+`
+  },
   {
     name: "Fibonacci (数组与循环)",
     cCode: `int main() {
@@ -654,6 +716,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
     cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
     memory: initialMemory,
+    timers: {},
     pc: 0x00003000,
     delayedPc: null,
     isPlaying: false,
@@ -688,6 +751,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        timers: {},
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
@@ -721,6 +785,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        timers: {},
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
@@ -752,6 +817,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        timers: {},
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
@@ -797,9 +863,12 @@ export const useMipsStore = create<MipsState>((set, get) => {
           nextUiIndex = instructions.length;
         }
         
+        const newTimers = snap.timers || {};
+
         set({
           registers: newRegisters,
           memory: newMemory,
+          timers: newTimers,
           pc: nextPc,
           currentInstructionIndex: nextUiIndex,
           isPlaying: !snap.outofbound && get().isPlaying
@@ -830,6 +899,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        timers: {},
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, get().instructions.findIndex(i => i.type === 'code')),
