@@ -8,6 +8,7 @@ export function IdePage() {
   const { 
     sourceMipsCode, setSourceMipsCode,
     instructions, currentInstructionIndex, registers, cp0Registers, pc, memory,
+    changedRegisters, changedCp0Registers, changedMemory,
     stepExecution, resetExecution,
     interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
   } = useMipsStore();
@@ -274,8 +275,8 @@ export function IdePage() {
           </div>
           <div className="flex-1 overflow-auto p-2">
             <div className="flex flex-col gap-1.5">
-              {registers.map((reg) => (
-                <div key={reg.name} className="flex justify-between items-center bg-white border border-slate-200 p-1 px-2 rounded text-xs hover:border-blue-300 hover:shadow-sm transition-all" title={reg.description}>
+              {registers.map((reg, idx) => (
+                <div key={reg.name} className={`flex justify-between items-center border p-1 px-2 rounded text-xs transition-all ${changedRegisters.has(idx) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm'}`} title={reg.description}>
                   <span className="font-mono font-bold text-blue-800 w-8">{reg.name}</span>
                   <span className="font-mono text-slate-600">{toHex(reg.value)}</span>
                 </div>
@@ -292,7 +293,7 @@ export function IdePage() {
           <div className="flex-1 overflow-auto p-2">
             <div className="flex flex-col gap-3">
               {/* SR */}
-              <div className="bg-white border border-slate-200 rounded p-2 text-xs flex flex-col gap-1">
+              <div className={`border rounded p-2 text-xs flex flex-col gap-1 transition-all ${changedCp0Registers.has(12) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-slate-200'}`}>
                 <div className="flex justify-between items-center border-b border-slate-100 pb-1 mb-1">
                   <span className="font-mono font-bold text-purple-800">SR (12)</span>
                   <span className="font-mono text-slate-600">{toHex(cp0Registers?.find(r => r.name === 'SR')?.value || 0)}</span>
@@ -312,7 +313,7 @@ export function IdePage() {
               </div>
               
               {/* Cause */}
-              <div className="bg-white border border-slate-200 rounded p-2 text-xs flex flex-col gap-1">
+              <div className={`border rounded p-2 text-xs flex flex-col gap-1 transition-all ${changedCp0Registers.has(13) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-slate-200'}`}>
                 <div className="flex justify-between items-center border-b border-slate-100 pb-1 mb-1">
                   <span className="font-mono font-bold text-purple-800">Cause (13)</span>
                   <span className="font-mono text-slate-600">{toHex(cp0Registers?.find(r => r.name === 'Cause')?.value || 0)}</span>
@@ -332,7 +333,7 @@ export function IdePage() {
               </div>
 
               {/* EPC */}
-              <div className="bg-white border border-slate-200 rounded p-2 text-xs flex flex-col gap-1">
+              <div className={`border rounded p-2 text-xs flex flex-col gap-1 transition-all ${changedCp0Registers.has(14) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-slate-200'}`}>
                 <div className="flex justify-between items-center border-b border-slate-100 pb-1 mb-1">
                   <span className="font-mono font-bold text-purple-800">EPC (14)</span>
                   <span className="font-mono text-slate-600">{toHex(cp0Registers?.find(r => r.name === 'EPC')?.value || 0)}</span>
@@ -465,12 +466,13 @@ export function IdePage() {
                           const offset = (dataWordCount - 1 - i) * 4;
                           const addr = 0x00000000 + offset;
                           const val = memory[addr];
+                          const isChanged = changedMemory.has(addr);
                           return (
-                            <div key={addr} className="flex border-b border-slate-200 last:border-b-0 hover:bg-slate-50">
+                            <div key={addr} className={`flex border-b border-slate-200 last:border-b-0 transition-all ${isChanged ? 'bg-yellow-100' : 'hover:bg-slate-50'}`}>
                               <div className="w-24 bg-slate-100 p-1 text-slate-500 border-r border-slate-200 text-center">
                                 {toHex(addr)}
                               </div>
-                              <div className="flex-1 p-1 text-center text-slate-800">
+                              <div className={`flex-1 p-1 text-center ${isChanged ? 'text-yellow-800 font-bold' : 'text-slate-800'}`}>
                                 {val !== undefined ? toHex(val) : '-'}
                               </div>
                             </div>
@@ -513,8 +515,10 @@ export function IdePage() {
                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 text-center">当前栈帧 (Stack)</h3>
                   <div className="flex-1 flex justify-center bg-slate-50 rounded border border-slate-200 p-4 overflow-hidden">
                     <div className="w-full border-2 border-slate-400 bg-white relative text-sm overflow-y-auto">
-                      {stackCells.map((cell) => (
-                        <div key={cell.address} className="border-b border-dashed border-slate-300 p-2 text-center font-mono relative h-12 flex flex-col justify-center">
+                      {stackCells.map((cell) => {
+                        const isChanged = cell.value !== undefined && changedMemory.has(cell.address);
+                        return (
+                        <div key={cell.address} className={`border-b border-dashed border-slate-300 p-2 text-center font-mono relative h-12 flex flex-col justify-center transition-all ${isChanged ? 'bg-yellow-100' : ''}`}>
                           {cell.isSp && (
                             <div className="absolute -left-12 top-1/2 -translate-y-1/2 flex items-center text-red-500 font-mono text-xs font-bold z-10">
                               $sp <ArrowRight size={14} />
@@ -528,11 +532,12 @@ export function IdePage() {
                              </span>
                            )}
                            
-                           <span className="font-bold text-slate-800">
+                           <span className={`font-bold ${isChanged ? 'text-yellow-800' : 'text-slate-800'}`}>
                              {cell.value !== undefined ? toHex(cell.value) : '-'}
                            </span>
                          </div>
-                      ))}
+                        );
+                      })}
                       <div className="p-2 text-center font-mono text-slate-400 text-xs">
                         ↓ 向下增长 ↓
                       </div>

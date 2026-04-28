@@ -90,6 +90,11 @@ export interface TimerState {
   count: string;
 }
 
+export const INITIAL_TIMERS: { [key: string]: TimerState } = {
+  'Timer 0': { ctrl: '00000000', preset: '00000000', count: '00000000' },
+  'Timer 1': { ctrl: '00000000', preset: '00000000', count: '00000000' },
+};
+
 interface MipsState {
   cCode: string;
   sourceMipsCode: string;
@@ -101,6 +106,13 @@ interface MipsState {
   cp0Registers: Register[];
   memory: Record<number, number>; // address -> value (word)
   timers: { [key: string]: TimerState };
+  
+  // Track changes for highlighting
+  changedRegisters: Set<number>;
+  changedCp0Registers: Set<number>;
+  changedMemory: Set<number>;
+  changedTimers: Set<string>; // 'Timer 0.ctrl'
+
   pc: number;
   delayedPc: number | null;
   isPlaying: boolean;
@@ -715,9 +727,13 @@ export const useMipsStore = create<MipsState>((set, get) => {
     
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
     cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
-    memory: initialMemory,
-    timers: {},
-    pc: 0x00003000,
+      memory: initialMemory,
+      timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
+      changedRegisters: new Set(),
+        changedCp0Registers: new Set(),
+        changedMemory: new Set(),
+        changedTimers: new Set(),
+        pc: 0x00003000,
     delayedPc: null,
     isPlaying: false,
     currentInstructionIndex: initialStartIndex,
@@ -751,7 +767,11 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
-        timers: {},
+        timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
+        changedRegisters: new Set(),
+        changedCp0Registers: new Set(),
+        changedMemory: new Set(),
+        changedTimers: new Set(),
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
@@ -785,7 +805,11 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
-        timers: {},
+        timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
+        changedRegisters: new Set(),
+        changedCp0Registers: new Set(),
+        changedMemory: new Set(),
+        changedTimers: new Set(),
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
@@ -817,7 +841,11 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
-        timers: {},
+        timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
+        changedRegisters: new Set(),
+        changedCp0Registers: new Set(),
+        changedMemory: new Set(),
+        changedTimers: new Set(),
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
@@ -831,18 +859,54 @@ export const useMipsStore = create<MipsState>((set, get) => {
       try {
         const snap = await piplineClient.step_cycle() as any;
         
-        const newRegisters = JSON.parse(JSON.stringify(get().registers)) as Register[];
+        const prevRegisters = get().registers;
+        const newRegisters = JSON.parse(JSON.stringify(prevRegisters)) as Register[];
+        const changedRegisters = new Set<number>();
         for (const [idxStr, regInfo] of Object.entries(snap.registers || {})) {
           const idx = parseInt(idxStr, 10);
           if (newRegisters[idx] && (regInfo as any).value) {
-            newRegisters[idx].value = parseInt((regInfo as any).value, 16);
+            const newVal = parseInt((regInfo as any).value, 16);
+            if (newRegisters[idx].value !== newVal) {
+              changedRegisters.add(idx);
+            }
+            newRegisters[idx].value = newVal;
           }
         }
         
-        const newMemory = { ...get().memory };
+        const prevMemory = get().memory;
+        const newMemory = { ...prevMemory };
+        const changedMemory = new Set<number>();
         for (const [addrHex, valHex] of Object.entries(snap.memory || {})) {
-          newMemory[parseInt(addrHex, 16)] = parseInt(valHex as string, 16);
+          const addr = parseInt(addrHex, 16);
+          const val = parseInt(valHex as string, 16);
+          if (prevMemory[addr] !== val) {
+            changedMemory.add(addr);
+          }
+          newMemory[addr] = val;
         }
+        
+        const prevTimers = get().timers;
+        const newTimers = snap.timers || {};
+        const changedTimers = new Set<string>();
+        
+        // Ensure we only mark as changed if the previous timer state actually existed and was different.
+        // On the very first step, prevTimers might be empty {}, we should treat this as initialization, not a change.
+        // Now that we have INITIAL_TIMERS, we can just check if they are equal to '00000000' on the first load if needed,
+        // but simply comparing to prevTimers is fine.
+        const isFirstTimerLoad = false;
+        
+        for (const timerId in newTimers) {
+          if (!isFirstTimerLoad) {
+            const oldTimer = prevTimers[timerId] || { ctrl: '', preset: '', count: '' };
+            const newTimer = newTimers[timerId];
+            if (oldTimer.ctrl !== newTimer.ctrl) changedTimers.add(`${timerId}.ctrl`);
+            if (oldTimer.preset !== newTimer.preset) changedTimers.add(`${timerId}.preset`);
+            if (oldTimer.count !== newTimer.count) changedTimers.add(`${timerId}.count`);
+          }
+        }
+
+        // We do the same for CP0 if the backend returns it (mocked for now, not tracked)
+        const changedCp0Registers = new Set<number>();
         
         let nextPc = parseInt(snap.pc, 16);
         
@@ -862,13 +926,15 @@ export const useMipsStore = create<MipsState>((set, get) => {
         if (nextUiIndex === -1) {
           nextUiIndex = instructions.length;
         }
-        
-        const newTimers = snap.timers || {};
 
         set({
           registers: newRegisters,
           memory: newMemory,
           timers: newTimers,
+          changedRegisters,
+          changedCp0Registers,
+          changedMemory,
+          changedTimers,
           pc: nextPc,
           currentInstructionIndex: nextUiIndex,
           isPlaying: !snap.outofbound && get().isPlaying
@@ -899,7 +965,11 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
-        timers: {},
+        timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
+        changedRegisters: new Set(),
+        changedCp0Registers: new Set(),
+        changedMemory: new Set(),
+        changedTimers: new Set(),
         pc: 0x00003000,
         delayedPc: null,
         currentInstructionIndex: Math.max(0, get().instructions.findIndex(i => i.type === 'code')),
