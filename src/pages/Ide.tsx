@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, StepForward, ArrowRight, Zap, FileCode, ToggleLeft, ToggleRight } from 'lucide-react';
+import { RotateCcw, StepForward, ArrowRight, Zap, FileCode } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
 import Editor from '@monaco-editor/react';
 
 export function IdePage() {
   const { 
     sourceMipsCode, setSourceMipsCode,
-    instructions, currentInstructionIndex, registers, pc, memory,
+    instructions, currentInstructionIndex, registers, cp0Registers, pc, memory,
     stepExecution, resetExecution,
     interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
   } = useMipsStore();
@@ -193,7 +193,7 @@ export function IdePage() {
       <div className="flex-1 flex overflow-hidden">
         
         {/* Left Panel 1: MIPS Code */}
-        <div className="w-[28%] flex flex-col border-r border-slate-300 shadow-sm z-10 bg-white">
+        <div className="w-[26%] flex flex-col border-r border-slate-300 shadow-sm z-10 bg-white">
           {/* Source MIPS Code (with pseudo instructions) */}
           <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
             <span>Source MIPS Code</span>
@@ -247,7 +247,7 @@ export function IdePage() {
         </div>
 
         {/* Left Panel 2: Registers */}
-        <div className="w-56 flex-shrink-0 flex flex-col border-r border-slate-300 shadow-sm z-10 bg-slate-50">
+        <div className="w-44 flex-shrink-0 flex flex-col border-r border-slate-300 shadow-sm z-10 bg-slate-50">
           <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
             <span>通用寄存器</span>
           </div>
@@ -255,10 +255,71 @@ export function IdePage() {
             <div className="flex flex-col gap-1.5">
               {registers.map((reg) => (
                 <div key={reg.name} className="flex justify-between items-center bg-white border border-slate-200 p-1 px-2 rounded text-xs hover:border-blue-300 hover:shadow-sm transition-all" title={reg.description}>
-                  <span className="font-mono font-bold text-blue-800 w-10">{reg.name}</span>
+                  <span className="font-mono font-bold text-blue-800 w-8">{reg.name}</span>
                   <span className="font-mono text-slate-600">{toHex(reg.value)}</span>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Left Panel 3: CP0 Registers */}
+        <div className="w-48 flex-shrink-0 flex flex-col border-r border-slate-300 shadow-sm z-10 bg-slate-50">
+          <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
+            <span>CP0 寄存器</span>
+          </div>
+          <div className="flex-1 overflow-auto p-2">
+            <div className="flex flex-col gap-3">
+              {/* SR */}
+              <div className="bg-white border border-slate-200 rounded p-2 text-xs flex flex-col gap-1">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-1 mb-1">
+                  <span className="font-mono font-bold text-purple-800">SR (12)</span>
+                  <span className="font-mono text-slate-600">{toHex(cp0Registers?.find(r => r.name === 'SR')?.value || 0)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500" title="Interrupt Mask (15:10)">IM (15:10)</span>
+                  <span className="font-mono text-slate-700">{(((cp0Registers?.find(r => r.name === 'SR')?.value || 0) >>> 10) & 0x3F).toString(2).padStart(6, '0')}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500" title="Exception Level (1)">EXL (1)</span>
+                  <span className="font-mono text-slate-700">{((cp0Registers?.find(r => r.name === 'SR')?.value || 0) >>> 1) & 0x1}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500" title="Interrupt Enable (0)">IE (0)</span>
+                  <span className="font-mono text-slate-700">{(cp0Registers?.find(r => r.name === 'SR')?.value || 0) & 0x1}</span>
+                </div>
+              </div>
+              
+              {/* Cause */}
+              <div className="bg-white border border-slate-200 rounded p-2 text-xs flex flex-col gap-1">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-1 mb-1">
+                  <span className="font-mono font-bold text-purple-800">Cause (13)</span>
+                  <span className="font-mono text-slate-600">{toHex(cp0Registers?.find(r => r.name === 'Cause')?.value || 0)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500" title="Branch Delay (31)">BD (31)</span>
+                  <span className="font-mono text-slate-700">{((cp0Registers?.find(r => r.name === 'Cause')?.value || 0) >>> 31) & 0x1}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500" title="Interrupt Pending (15:10)">IP (15:10)</span>
+                  <span className="font-mono text-slate-700">{(((cp0Registers?.find(r => r.name === 'Cause')?.value || 0) >>> 10) & 0x3F).toString(2).padStart(6, '0')}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500" title="Exception Code (6:2)">ExcCode (6:2)</span>
+                  <span className="font-mono text-slate-700">{(((cp0Registers?.find(r => r.name === 'Cause')?.value || 0) >>> 2) & 0x1F).toString(2).padStart(5, '0')}</span>
+                </div>
+              </div>
+
+              {/* EPC */}
+              <div className="bg-white border border-slate-200 rounded p-2 text-xs flex flex-col gap-1">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-1 mb-1">
+                  <span className="font-mono font-bold text-purple-800">EPC (14)</span>
+                  <span className="font-mono text-slate-600">{toHex(cp0Registers?.find(r => r.name === 'EPC')?.value || 0)}</span>
+                </div>
+                <div className="text-slate-500 text-[10px] leading-tight">
+                  记录异常处理结束后需要返回的 PC
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -291,7 +352,7 @@ export function IdePage() {
                 <div className="flex-1 flex flex-col items-center justify-start pt-2 p-4 relative" id="memory-layout-container">
                   <div className="flex flex-col w-full max-w-md items-center justify-start space-y-4 pb-4">
                     {/* Diagram Top */}
-                    <div className="w-64 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
+                    <div className="w-52 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
                       
                       {/* MMIO */}
                       <div className="h-12 bg-purple-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
@@ -366,7 +427,7 @@ export function IdePage() {
                       <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x00000000)</h3>
                       <div 
                         ref={dataSegmentViewRef} 
-                        className="w-64 border border-slate-300 bg-white rounded overflow-y-auto text-xs font-mono h-48 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)] relative"
+                        className="w-52 border border-slate-300 bg-white rounded overflow-y-auto text-xs font-mono h-48 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)] relative"
                         onScroll={() => {
                           // Manually trigger the update arrows effect when data segment scrolls
                           window.dispatchEvent(new Event('resize'));
@@ -418,7 +479,7 @@ export function IdePage() {
                 </div>
 
                 {/* Stack View */}
-                <div ref={stackViewRef} className="w-64 flex-shrink-0 flex flex-col border-l border-slate-200 p-4 bg-slate-50 overflow-y-auto relative z-10 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)]">
+                <div ref={stackViewRef} className="w-56 flex-shrink-0 flex flex-col border-l border-slate-200 p-4 bg-slate-50 overflow-y-auto relative z-10 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)]">
                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 text-center">当前栈帧 (Stack)</h3>
                   <div className="flex-1 flex justify-center bg-slate-50 rounded border border-slate-200 p-4 overflow-hidden">
                     <div className="w-full border-2 border-slate-400 bg-white relative text-sm overflow-y-auto">

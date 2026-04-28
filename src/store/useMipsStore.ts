@@ -64,6 +64,12 @@ export const INITIAL_REGISTERS: Register[] = [
   { name: '$lo', value: 0, description: '乘法低位/除法商' },
 ];
 
+export const INITIAL_CP0_REGISTERS: Register[] = [
+  { name: 'SR', value: 0x00000000, description: 'Status Register (12)' },
+  { name: 'Cause', value: 0x00000000, description: 'Cause Register (13)' },
+  { name: 'EPC', value: 0x00000000, description: 'Exception Program Counter (14)' },
+];
+
 export interface Instruction {
   id: string;
   address: number;
@@ -86,6 +92,7 @@ interface MipsState {
   labels: Record<string, number>;
   
   registers: Register[];
+  cp0Registers: Register[];
   memory: Record<number, number>; // address -> value (word)
   pc: number;
   delayedPc: number | null;
@@ -145,8 +152,7 @@ loop:
   bgtz $t1, loop              # repeat if not finished yet.
   nop
   
-  li   $v0, 10                # system call for exit
-  syscall`
+`
   },
   {
     name: "二维数组操作",
@@ -201,8 +207,7 @@ in_j_end:
   nop
 
 in_i_end:
-  li  $v0, 10
-  syscall`
+`
   },
   {
     name: "基本循环与累加",
@@ -230,8 +235,7 @@ loop:
 
 loop_end:
   move $a0, $s1           # 赋值，$a0 = $s1
-  li  $v0, 10             # 结束程序
-  syscall`
+`
   },
   {
     name: "一维数组赋值",
@@ -266,8 +270,7 @@ loop_in:
   nop
 
 loop_in_end:
-  li $v0, 10
-  syscall`
+`
   },
   {
     name: "递归函数调用 (阶乘)",
@@ -287,9 +290,6 @@ main:
   jal     factorial
   nop
   move    $s1, $v0        # $s1 保存阶乘结果
-
-  li      $v0, 10
-  syscall
 
 factorial:
   # 入栈
@@ -652,6 +652,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
     labels: initialParse.labels,
     
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
+    cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
     memory: initialMemory,
     pc: 0x00003000,
     delayedPc: null,
@@ -685,6 +686,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         instructions: parsed.instructions,
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
+        cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
         pc: 0x00003000,
         delayedPc: null,
@@ -717,6 +719,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         instructions: parsed.instructions,
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
+        cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
         pc: 0x00003000,
         delayedPc: null,
@@ -747,6 +750,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         instructions: parsed.instructions,
         labels: parsed.labels,
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
+        cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
         pc: 0x00003000,
         delayedPc: null,
@@ -824,6 +828,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
       set({
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
+        cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
         pc: 0x00003000,
         delayedPc: null,
