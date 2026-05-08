@@ -93,8 +93,8 @@ export function IdePage() {
         const mmioStartY = mmioRect.top + mmioRect.height / 2 - svgRect.top;
         
         // To Timers block right edge
-        const timersEndX = timersRect.right - svgRect.left + 5;
-        const timersEndY = timersRect.top + timersRect.height / 2 - svgRect.top;
+        const timersEndX = timersRect.right - svgRect.left + 15;
+        const timersEndY = timersRect.top + 20 - svgRect.top;
 
         mmioPath = `M ${mmioStartX},${mmioStartY} C ${mmioStartX - 50},${mmioStartY} ${timersEndX + 50},${timersEndY} ${timersEndX},${timersEndY}`;
       }
@@ -290,7 +290,12 @@ export function IdePage() {
           <div className="bg-slate-200 px-3 py-1 text-xs font-bold text-slate-600 uppercase tracking-wider flex justify-between">
             <span>CP0 寄存器</span>
           </div>
-          <div className="flex-1 overflow-auto p-2">
+          <div 
+            className="flex-1 overflow-auto p-2"
+            onScroll={() => {
+              window.dispatchEvent(new Event('resize'));
+            }}
+          >
             <div className="flex flex-col gap-3">
               {/* SR */}
               <div className={`border rounded p-2 text-xs flex flex-col gap-1 transition-all ${changedCp0Registers.has(12) ? 'bg-yellow-100 border-yellow-300' : 'bg-white border-slate-200'}`}>
@@ -372,7 +377,12 @@ export function IdePage() {
           </div>
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-auto p-4 bg-white relative">
+          <div 
+            className="flex-1 overflow-auto p-4 bg-white relative"
+            onScroll={() => {
+              window.dispatchEvent(new Event('resize'));
+            }}
+          >
             
             {/* Tab 1: Stack & Memory */}
             {activeTab === 'stackAndMemory' && (
@@ -485,7 +495,7 @@ export function IdePage() {
                 </div>
 
                 {/* Connecting Visual SVG */}
-                <div ref={svgContainerRef} className="hidden lg:block absolute inset-0 pointer-events-none z-0" style={{ overflow: 'visible' }}>
+                <div ref={svgContainerRef} className="hidden lg:block fixed inset-0 pointer-events-none z-[60]" style={{ overflow: 'visible' }}>
                    <svg width="100%" height="100%" className="absolute inset-0" style={{ overflow: 'visible' }}>
                     <defs>
                       <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -511,7 +521,13 @@ export function IdePage() {
                 </div>
 
                 {/* Stack View */}
-                <div ref={stackViewRef} className="w-56 flex-shrink-0 flex flex-col border-l border-slate-200 p-4 bg-slate-50 overflow-y-auto relative z-10 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)]">
+                <div 
+                  ref={stackViewRef} 
+                  className="w-56 flex-shrink-0 flex flex-col border-l border-slate-200 p-4 bg-slate-50 overflow-y-auto relative z-10 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)]"
+                  onScroll={() => {
+                    window.dispatchEvent(new Event('resize'));
+                  }}
+                >
                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 text-center">当前栈帧 (Stack)</h3>
                   <div className="flex-1 flex justify-center bg-slate-50 rounded border border-slate-200 p-4 overflow-hidden">
                     <div className="w-full border-2 border-slate-400 bg-white relative text-sm overflow-y-auto">

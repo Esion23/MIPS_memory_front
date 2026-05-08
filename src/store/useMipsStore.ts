@@ -600,11 +600,45 @@ function expandPseudoInstructions(mips: string): string {
 
 function parseMipsToInstructions(mips: string): { instructions: Instruction[], labels: Record<string, number> } {
   const lines = mips.split('\n');
-  const instructions: Instruction[] = [];
   const labels: Record<string, number> = {};
+  
+  // Pass 1: Collect labels
+  let currentAddressPass1 = 0x00003000;
+  let inDataSectionPass1 = false;
+  
+  lines.forEach((line) => {
+    const text = line.trim();
+    if (!text) return;
+    
+    const commentIdx = text.indexOf('#');
+    let pureCode = text;
+    if (commentIdx !== -1) {
+      pureCode = text.substring(0, commentIdx).trim();
+    }
+    
+    if (pureCode === '.data') {
+      inDataSectionPass1 = true;
+    } else if (pureCode === '.text') {
+      inDataSectionPass1 = false;
+    } else if (inDataSectionPass1) {
+      // no-op for pc
+    } else if (pureCode.startsWith('.')) {
+      // no-op for pc
+    } else if (pureCode.endsWith(':')) {
+      const labelName = pureCode.substring(0, pureCode.length - 1);
+      labels[labelName] = currentAddressPass1;
+    } else if (pureCode !== '') {
+      currentAddressPass1 += 4;
+    }
+  });
+
+  // Pass 2: Generate instructions
+  const instructions: Instruction[] = [];
   let currentAddress = 0x00003000;
   let inDataSection = false;
   
+  const toHexAddr = (num: number) => '0x' + num.toString(16).padStart(4, '0');
+
   lines.forEach((line, index) => {
     const text = line.trim();
     if (!text) return;
@@ -612,8 +646,10 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
     // Check if it has a comment
     const commentIdx = text.indexOf('#');
     let pureCode = text;
+    let commentPart = '';
     if (commentIdx !== -1) {
       pureCode = text.substring(0, commentIdx).trim();
+      commentPart = text.substring(commentIdx);
     }
     
     if (pureCode === '') {
@@ -630,10 +666,19 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
     } else if (pureCode.startsWith('.')) {
       instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (pureCode.endsWith(':')) {
-      const labelName = pureCode.substring(0, pureCode.length - 1);
-      labels[labelName] = currentAddress;
-      instructions.push({ id: `line-${index}`, address: currentAddress, text: text, type: 'label' });
+      // Label lines should not have an address assigned to them in the expanded assembly view!
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'label' });
     } else {
+      // Replace any used label with its hex address
+      const codeParts = pureCode.split(/([\s,]+)/);
+      for (let i = 0; i < codeParts.length; i++) {
+        const part = codeParts[i];
+        if (labels[part] !== undefined) {
+          codeParts[i] = toHexAddr(labels[part]);
+        }
+      }
+      pureCode = codeParts.join('');
+
       // For code, let's also try to align mnemonics if they aren't already
       let formattedText = pureCode;
       const spaceIdx = pureCode.indexOf(' ');
@@ -646,6 +691,10 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
         formattedText = op.padEnd(8, ' ') + args;
       } else {
         formattedText = pureCode.padEnd(8, ' ');
+      }
+
+      if (commentPart) {
+        formattedText += ' '.repeat(Math.max(1, 30 - formattedText.length)) + commentPart;
       }
 
       instructions.push({ id: `line-${index}`, address: currentAddress, text: formattedText, type: 'code' });
