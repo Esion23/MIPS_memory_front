@@ -96,7 +96,6 @@ export const INITIAL_TIMERS: { [key: string]: TimerState } = {
 };
 
 interface MipsState {
-  cCode: string;
   sourceMipsCode: string;
   mipsCode: string;
   instructions: Instruction[];
@@ -120,10 +119,8 @@ interface MipsState {
   
   interruptState: InterruptState;
   
-  setCCode: (code: string) => void;
   setSourceMipsCode: (code: string) => void;
   setMipsCode: (code: string) => void;
-  compileToMips: () => void;
   stepExecution: () => void;
   resetExecution: () => void;
   togglePlay: () => void;
@@ -136,24 +133,60 @@ interface MipsState {
 
 export const EXAMPLES = [
   {
+    name: "Timer 0 (中断驱动)",
+    mipsCode: `.text
+main:
+  # 1. 配置 CP0 SR 寄存器，开启全局中断 (IE=1) 并解除对 Timer 0 的中断屏蔽 (IM[0]=1)
+  # Timer 0 的硬件中断线映射到 Cause.IP[0] 即第 10 位
+  # 所以 SR 的第 10 位和第 0 位都要置 1，即 SR = 0x00000401
+  lui $t0, 0x0000
+  ori $t0, $t0, 0x0401
+  mtc0 $t0, $12         # 写入 CP0.SR (12)
+
+  # 2. 初始化 Timer 0 基地址 0x00007F00
+  lui $t0, 0x0000
+  ori $t0, $t0, 0x7F00
+  
+  # 3. 设置 PRESET 倒计时初值 = 5
+  addi $t1, $zero, 5
+  sw $t1, 4($t0)        # 写入 PRESET 寄存器
+  
+  # 4. 启动 Timer 0 (CTRL = 9: Enable=1, Mode=0, IM=1)
+  addi $t1, $zero, 9
+  sw $t1, 0($t0)        # 写入 CTRL 寄存器
+  
+  # 5. 无限循环，等待中断发生
+wait_loop:
+  j wait_loop
+  nop
+
+# ========================================
+# 异常处理程序 (Exception Handler)
+# 当硬件发生中断时，CPU 自动跳转到此处 (0x4180)
+# ========================================
+.ktext
+handler:
+  # 1. 确认中断原因 (读取 Cause 寄存器)
+  mfc0 $k0, $13         # 读取 CP0.Cause (13)
+  
+  # 2. 这里可以检查 Cause 的内容，处理 Timer 0 中断
+  # (为了简单演示，我们直接在 $v0 写入一个特定值表示中断发生)
+  lui $v0, 0x0000
+  ori $v0, $v0, 0xABCD
+  
+  # 3. 清除 Timer 0 中断标志，否则会不断触发
+  # 将 Timer 0 CTRL 的 Enable 位置为 0
+  lui $k1, 0x0000
+  ori $k1, $k1, 0x7F00
+  sw $zero, 0($k1)
+  
+  # 4. 中断返回 (ERET)
+  eret
+  nop
+`
+  },
+  {
     name: "Timer 0 (定时器倒计时)",
-    cCode: `int main() {
-  int* timer0_ctrl = (int*)0x00007F00;
-  int* timer0_preset = (int*)0x00007F04;
-  int* timer0_count = (int*)0x00007F08;
-  
-  // 设置倒计时 5 个周期
-  *timer0_preset = 5;
-  // 启动 Timer0 (Mode 0, Enable)
-  *timer0_ctrl = 1;
-  
-  // 等待倒计时结束
-  while (*timer0_count > 0) {
-    // wait
-  }
-  
-  return 0xbeef;
-}`,
     mipsCode: `main:
   # 1. 初始化 Timer 0 基地址 0x00007F00
   lui $t0, 0x0000
@@ -192,16 +225,6 @@ timer_done:
   },
   {
     name: "Fibonacci (数组与循环)",
-    cCode: `int main() {
-  int size = 12;
-  int fibs[12];
-  fibs[0] = 1;
-  fibs[1] = 1;
-  for(int i = 0; i < size - 2; i++) {
-    fibs[i+2] = fibs[i] + fibs[i+1];
-  }
-  return 0;
-}`,
     mipsCode: `.data
 fibs: .space 48
 size: .word 12
@@ -230,18 +253,6 @@ loop:
   },
   {
     name: "二维数组操作",
-    cCode: `int main() {
-  int matrix[8][8];
-  int rows = 3; // 模拟输入
-  int cols = 3; // 模拟输入
-  
-  for(int i = 0; i < rows; i++) {
-    for(int j = 0; j < cols; j++) {
-       matrix[i][j] = 5; // 模拟输入
-    }
-  }
-  return 0;
-}`,
     mipsCode: `.data
 # 为了演示简化，分配 64 words 用于 8x8 matrix (256 bytes)
 matrix: .space 256
@@ -285,14 +296,6 @@ in_i_end:
   },
   {
     name: "基本循环与累加",
-    cCode: `int main() {
-  int n = 5; // 模拟输入
-  int sum = 0;
-  for(int i = 1; i <= n; i++) {
-    sum += i;
-  }
-  return sum;
-}`,
     mipsCode: `.text
 main:
   li  $s0, 5              # 模拟输入 n = 5
@@ -313,14 +316,6 @@ loop_end:
   },
   {
     name: "一维数组赋值",
-    cCode: `int main() {
-  int array[10];
-  int n = 3; // 模拟输入
-  for(int i=0; i<n; i++) {
-    array[i] = 8; // 模拟输入
-  }
-  return 0;
-}`,
     mipsCode: `.data
 array: .space 40
 
@@ -348,14 +343,6 @@ loop_in_end:
   },
   {
     name: "递归函数调用 (阶乘)",
-    cCode: `int factorial(int n) {
-  if (n == 1) return 1;
-  return n * factorial(n - 1);
-}
-
-int main() {
-  return factorial(4); // 模拟输入4
-}`,
     mipsCode: `.text
 main:
   li      $s0, 4          # 模拟输入 n = 4
@@ -415,7 +402,7 @@ function parseInitialMemory(mips: string): { memory: Record<number, number>, dat
       inDataSection = true;
       return;
     }
-    if (text === '.text') {
+    if (text === '.text' || text.startsWith('.ktext')) {
       inDataSection = false;
       return;
     }
@@ -483,7 +470,7 @@ function expandPseudoInstructions(mips: string): string {
       inDataSection = true;
       expandedLines.push(line);
       return;
-    } else if (text === '.text') {
+    } else if (text === '.text' || text.startsWith('.ktext')) {
       inDataSection = false;
       expandedLines.push(line);
       return;
@@ -604,7 +591,7 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
   
   // Pass 1: Collect labels
   let currentAddressPass1 = 0x00003000;
-  let inDataSectionPass1 = false;
+  let currentSectionPass1 = 'text'; // 'text', 'data', 'ktext'
   
   lines.forEach((line) => {
     const text = line.trim();
@@ -617,10 +604,19 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
     }
     
     if (pureCode === '.data') {
-      inDataSectionPass1 = true;
+      currentSectionPass1 = 'data';
     } else if (pureCode === '.text') {
-      inDataSectionPass1 = false;
-    } else if (inDataSectionPass1) {
+      currentSectionPass1 = 'text';
+    } else if (pureCode.startsWith('.ktext')) {
+      currentSectionPass1 = 'ktext';
+      // extract address from .ktext if present
+      const match = pureCode.match(/\.ktext\s+(0x[0-9a-fA-F]+|\d+)/);
+      if (match) {
+        currentAddressPass1 = parseInt(match[1], match[1].startsWith('0x') ? 16 : 10);
+      } else {
+        currentAddressPass1 = 0x00004180;
+      }
+    } else if (currentSectionPass1 === 'data') {
       // no-op for pc
     } else if (pureCode.startsWith('.')) {
       // no-op for pc
@@ -635,7 +631,7 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
   // Pass 2: Generate instructions
   const instructions: Instruction[] = [];
   let currentAddress = 0x00003000;
-  let inDataSection = false;
+  let currentSection = 'text';
   
   const toHexAddr = (num: number) => '0x' + num.toString(16).padStart(4, '0');
 
@@ -655,12 +651,21 @@ function parseMipsToInstructions(mips: string): { instructions: Instruction[], l
     if (pureCode === '') {
       instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'comment' });
     } else if (pureCode === '.data') {
-      inDataSection = true;
+      currentSection = 'data';
       instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (pureCode === '.text') {
-      inDataSection = false;
+      currentSection = 'text';
       instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
-    } else if (inDataSection) {
+    } else if (pureCode.startsWith('.ktext')) {
+      currentSection = 'ktext';
+      const match = pureCode.match(/\.ktext\s+(0x[0-9a-fA-F]+|\d+)/);
+      if (match) {
+        currentAddress = parseInt(match[1], match[1].startsWith('0x') ? 16 : 10);
+      } else {
+        currentAddress = 0x00004180;
+      }
+      instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
+    } else if (currentSection === 'data') {
       // In .data section, lines like "array: .word 10, 20" shouldn't get PC addresses
       instructions.push({ id: `line-${index}`, address: 0, text: text, type: 'directive' });
     } else if (pureCode.startsWith('.')) {
@@ -717,27 +722,37 @@ function parseMemOp(operand: string, getReg: (n: string) => number): { addr: num
   return { addr: 0 };
 }
 
-function extractTextSegment(expandedMips: string): string {
+function extractSegments(expandedMips: string): { asm_source: string, handler_source: string } {
   const lines = expandedMips.split('\n');
   const textLines: string[] = [];
-  let inDataSection = false;
+  const ktextLines: string[] = [];
+  let currentSection = 'text'; // 'text', 'data', 'ktext'
 
   lines.forEach(line => {
     let text = line.trim();
     if (text === '.data') {
-      inDataSection = true;
+      currentSection = 'data';
       return;
     }
     if (text === '.text') {
-      inDataSection = false;
+      currentSection = 'text';
       return;
     }
-    if (!inDataSection) {
+    if (text.startsWith('.ktext')) {
+      currentSection = 'ktext';
+      return;
+    }
+    if (currentSection === 'text') {
       textLines.push(line);
+    } else if (currentSection === 'ktext') {
+      ktextLines.push(line);
     }
   });
 
-  return textLines.join('\n');
+  return { 
+    asm_source: textLines.join('\n'), 
+    handler_source: ktextLines.join('\n') 
+  };
 }
 
 function toHexString(num: number): string {
@@ -746,7 +761,7 @@ function toHexString(num: number): string {
 }
 
 const preparePiplinePayload = (expandedMips: string, memoryRecord: Record<number, number>) => {
-  const asm_source = extractTextSegment(expandedMips);
+  const { asm_source, handler_source } = extractSegments(expandedMips);
   const initial_memory: Record<string, string> = {};
   for (const [addr, val] of Object.entries(memoryRecord)) {
     initial_memory[toHexString(parseInt(addr, 10))] = toHexString(val);
@@ -755,7 +770,7 @@ const preparePiplinePayload = (expandedMips: string, memoryRecord: Record<number
     '28': toHexString(0x00001800), // gp
     '29': toHexString(0x00002ffc)  // sp
   };
-  return { asm_source, initial_memory, initial_registers };
+  return { asm_source, handler_source, initial_memory, initial_registers };
 };
 
 export const useMipsStore = create<MipsState>((set, get) => {
@@ -768,7 +783,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
   const { memory: initialMemory } = parseInitialMemory(initialSource);
 
   return {
-    cCode: EXAMPLES[0].cCode,
     sourceMipsCode: initialSource,
     mipsCode: initialExpanded,
     instructions: initialParse.instructions,
@@ -793,9 +807,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
       savedPc: 0,
     },
     
-    setCCode: (code) => set({ cCode: code }),
-    
-    
     setSourceMipsCode: async (code) => {
       const expanded = expandPseudoInstructions(code);
       const parsed = parseMipsToInstructions(expanded);
@@ -803,7 +814,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
       const payload = preparePiplinePayload(expanded, memory);
       try {
-        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers, payload.handler_source);
       } catch (e) {
         console.error("Failed to load program to pipline backend:", e);
       }
@@ -830,43 +841,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
     },
     
     setMipsCode: (code) => set({ mipsCode: code }),
-
-
-    
-    compileToMips: async () => {
-      const example = EXAMPLES.find(e => get().cCode.includes(e.cCode.substring(0, 20))) || EXAMPLES[0];
-      const expanded = expandPseudoInstructions(example.mipsCode);
-      const parsed = parseMipsToInstructions(expanded);
-      const { memory } = parseInitialMemory(example.mipsCode);
-
-      const payload = preparePiplinePayload(expanded, memory);
-      try {
-        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
-      } catch (e) {
-        console.error("Failed to load program to pipline backend:", e);
-      }
-
-      set({
-        sourceMipsCode: example.mipsCode,
-        mipsCode: expanded,
-        instructions: parsed.instructions,
-        labels: parsed.labels,
-        registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
-        cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
-        memory,
-        timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
-        changedRegisters: new Set(),
-        changedCp0Registers: new Set(),
-        changedMemory: new Set(),
-        changedTimers: new Set(),
-        pc: 0x00003000,
-        delayedPc: null,
-        currentInstructionIndex: Math.max(0, parsed.instructions.findIndex(i => i.type === 'code')),
-        isPlaying: false,
-      });
-    },
-
-
     
     loadExample: async (index: number) => {
       const ex = EXAMPLES[index];
@@ -876,13 +850,12 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
       const payload = preparePiplinePayload(expanded, memory);
       try {
-        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers, payload.handler_source);
       } catch (e) {
         console.error("Failed to load program to pipline backend:", e);
       }
 
       set({
-        cCode: ex.cCode,
         sourceMipsCode: ex.mipsCode,
         mipsCode: expanded,
         instructions: parsed.instructions,
@@ -954,20 +927,49 @@ export const useMipsStore = create<MipsState>((set, get) => {
           }
         }
 
-        // We do the same for CP0 if the backend returns it (mocked for now, not tracked)
+        const prevCp0Registers = get().cp0Registers;
+        const newCp0Registers = JSON.parse(JSON.stringify(prevCp0Registers)) as Register[];
         const changedCp0Registers = new Set<number>();
         
+        if (snap.cp0) {
+          const updateCp0 = (name: string, idx: number, valStr: string) => {
+            const val = parseInt(valStr, 16);
+            const rIndex = newCp0Registers.findIndex(r => r.name === name);
+            if (rIndex !== -1) {
+              if (newCp0Registers[rIndex].value !== val) {
+                newCp0Registers[rIndex].value = val;
+                changedCp0Registers.add(idx);
+              }
+            }
+          };
+          updateCp0('SR', 12, snap.cp0.sr);
+          updateCp0('Cause', 13, snap.cp0.cause);
+          updateCp0('EPC', 14, snap.cp0.epc);
+        }
+        
         let nextPc = parseInt(snap.pc, 16);
+        let isPipelineEmpty = true;
         
         // Use MEM stage as macro PC if it has a valid instruction, else EX, ID, IF
         if (snap.pipeline?.MEM && !snap.pipeline.MEM.is_bubble) {
           nextPc = parseInt(snap.pipeline.MEM.pc, 16);
+          isPipelineEmpty = false;
         } else if (snap.pipeline?.EX && !snap.pipeline.EX.is_bubble) {
           nextPc = parseInt(snap.pipeline.EX.pc, 16);
+          isPipelineEmpty = false;
         } else if (snap.pipeline?.ID && !snap.pipeline.ID.is_bubble) {
           nextPc = parseInt(snap.pipeline.ID.pc, 16);
+          isPipelineEmpty = false;
         } else if (snap.pipeline?.IF && !snap.pipeline.IF.is_bubble) {
           nextPc = parseInt(snap.pipeline.IF.pc, 16);
+          isPipelineEmpty = false;
+        }
+
+        // If pipeline is totally empty, it means we just flushed (e.g. exception).
+        // In the backend, `self.pc` stores `target - 4`, so snap.pc is `target - 4`.
+        // We should add 4 to get the actual target PC.
+        if (isPipelineEmpty) {
+          nextPc += 4;
         }
         
         const { instructions } = get();
@@ -978,6 +980,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
 
         set({
           registers: newRegisters,
+          cp0Registers: newCp0Registers,
           memory: newMemory,
           timers: newTimers,
           changedRegisters,
@@ -1005,7 +1008,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
       const expanded = expandPseudoInstructions(sourceMipsCode);
       const payload = preparePiplinePayload(expanded, memory);
       try {
-        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers);
+        await piplineClient.load_program(payload.asm_source, payload.initial_memory, payload.initial_registers, payload.handler_source);
       } catch (e) {
         console.error("Failed to load program on pipline backend during reset:", e);
       }

@@ -6,6 +6,7 @@ export interface SnapshotSchema {
   registers: Record<string, { name: string; value: string }>;
   memory: Record<string, string>;
   timers: { [key: string]: { ctrl: string, preset: string, count: string } };
+  cp0?: { sr: string, cause: string, epc: string };
   events: any;
 }
 
@@ -38,10 +39,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const piplineClient = {
-  async load_program(asm_source: string, initial_memory?: Record<string, string>, initial_registers?: Record<string, string>) {
+  async load_program(asm_source: string, initial_memory?: Record<string, string>, initial_registers?: Record<string, string>, handler_source?: string) {
     return request<{ success: boolean; message: string }>('/load_program', {
       method: 'POST',
-      body: JSON.stringify({ asm_source, initial_memory, initial_registers })
+      body: JSON.stringify({ asm_source, initial_memory, initial_registers, enable_exceptions: true, handler_source })
     });
   },
 

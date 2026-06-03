@@ -406,6 +406,15 @@ export function IdePage() {
                         <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00004180)}
                         </div>
+                        {/* PC Indicator (Exception Handler) */}
+                        {pc >= 0x00004180 && (
+                          <div 
+                            className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
+                            style={{ bottom: `${-8 + Math.min(40, Math.max(0, (pc - 0x00004180) / 4 * 4))}px` }}
+                          >
+                            PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
+                          </div>
+                        )}
                       </div>
                     
                       {/* Text Segment */}
@@ -415,12 +424,14 @@ export function IdePage() {
                           {toHex(0x00003000)}
                         </div>
                         {/* PC Indicator */}
-                        <div 
-                          className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
-                          style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00003000) / 4 * 4))}px` }}
-                        >
-                          PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
-                        </div>
+                        {pc < 0x00004180 && (
+                          <div 
+                            className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
+                            style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00003000) / 4 * 4))}px` }}
+                          >
+                            PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
+                          </div>
+                        )}
                       </div>
                     
                       {/* Stack Segment */}
