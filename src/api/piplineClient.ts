@@ -10,7 +10,7 @@ export interface SnapshotSchema {
   events: any;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '/api');
 
 function getSessionId() {
   let sessionId = sessionStorage.getItem('pipline_session_id');

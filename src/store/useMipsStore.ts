@@ -342,45 +342,40 @@ loop_in_end:
 `
   },
   {
-    name: "递归函数调用 (阶乘)",
+    name: "递归函数调用 (递归求和)",
     mipsCode: `.text
 main:
-  li      $s0, 4          # 模拟输入 n = 4
+  li      $s0, 5          # 模拟输入 n = 5
 
   move    $a0, $s0
-  jal     factorial
+  jal     recursive_sum
   nop
-  move    $s1, $v0        # $s1 保存阶乘结果
+  move    $s1, $v0        # $s1 保存 1+2+...+n 的结果
 
-factorial:
-  # 入栈
+recursive_sum:
+  # 入栈：保存返回地址和本层参数 n
   addi    $sp, $sp, -8
   sw      $ra, 4($sp)
-  sw      $t0, 0($sp)
+  sw      $a0, 0($sp)
   
-  # 将参数存入临时寄存器中
-  move    $t0, $a0
-  
-  # 基准情况
-  li      $t2, 1
-  bne     $t0, $t2, else
-  nop
-  li      $v0, 1
-  j       if_end  
+  # 基准情况：n <= 0 时返回 0
+  blez    $a0, base_case
   nop
   
-  # 递归情况  
-else:
-  addi    $t1, $t0, -1
-  move    $a0, $t1
-  jal     factorial
+  # 递归情况：sum(n) = sum(n - 1) + n
+  addi    $a0, $a0, -1
+  jal     recursive_sum
   nop
-  mult    $t0, $v0
-  mflo    $v0
+  lw      $t0, 0($sp)     # 取回本层 n
+  add     $v0, $v0, $t0
+  j       sum_end
+  nop
 
-if_end:
+base_case:
+  li      $v0, 0
+
+sum_end:
   # 出栈
-  lw      $t0, 0($sp)
   lw      $ra, 4($sp)
   addi    $sp, $sp, 8
   # 返回
