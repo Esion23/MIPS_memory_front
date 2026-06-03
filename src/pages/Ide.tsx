@@ -386,14 +386,14 @@ export function IdePage() {
             
             {/* Tab 1: Stack & Memory */}
             {activeTab === 'stackAndMemory' && (
-              <div className="flex h-full overflow-hidden relative">
-                <div className="flex-1 flex flex-col items-center justify-start pt-2 p-4 relative" id="memory-layout-container">
-                  <div className="flex flex-col w-full max-w-md items-center justify-start space-y-4 pb-4">
+              <div className="flex min-h-full relative">
+                <div className="flex-1 flex flex-col items-center justify-start p-3 relative" id="memory-layout-container">
+                  <div className="flex flex-col w-full max-w-md items-center justify-start gap-3 pb-3">
                     {/* Diagram Top */}
                     <div className="w-52 border-2 border-red-800 bg-white relative flex-shrink-0 ml-16">
                       
                       {/* MMIO */}
-                      <div ref={mmioBlockRef} className="h-12 bg-purple-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                      <div ref={mmioBlockRef} className="h-10 bg-purple-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
                         <span className="text-blue-800 font-bold text-xs">MMIO</span>
                         <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00007f00)}
@@ -401,7 +401,7 @@ export function IdePage() {
                       </div>
                     
                       {/* Exception Handler */}
-                      <div className="h-12 bg-orange-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                      <div className="h-10 bg-orange-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
                         <span className="text-blue-800 font-bold text-xs">Exception Handler</span>
                         <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00004180)}
@@ -410,7 +410,7 @@ export function IdePage() {
                         {pc >= 0x00004180 && (
                           <div 
                             className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
-                            style={{ bottom: `${-8 + Math.min(40, Math.max(0, (pc - 0x00004180) / 4 * 4))}px` }}
+                            style={{ bottom: `${-8 + Math.min(32, Math.max(0, (pc - 0x00004180) / 4 * 4))}px` }}
                           >
                             PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
                           </div>
@@ -418,7 +418,7 @@ export function IdePage() {
                       </div>
                     
                       {/* Text Segment */}
-                      <div className="h-32 bg-yellow-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                      <div className="h-24 bg-yellow-100 border-b border-slate-400 flex flex-col items-center justify-center relative">
                         <span className="text-blue-800 font-bold text-xs">.text Segment</span>
                         <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00003000)}
@@ -427,7 +427,7 @@ export function IdePage() {
                         {pc < 0x00004180 && (
                           <div 
                             className="absolute -left-[100px] flex items-center text-black font-bold font-mono text-[10px] transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
-                            style={{ bottom: `${-8 + Math.min(110, Math.max(0, (pc - 0x00003000) / 4 * 4))}px` }}
+                            style={{ bottom: `${-8 + Math.min(80, Math.max(0, (pc - 0x00003000) / 4 * 4))}px` }}
                           >
                             PC <span className="text-red-600 mx-1">▶</span> {toHex(pc)}
                           </div>
@@ -435,8 +435,8 @@ export function IdePage() {
                       </div>
                     
                       {/* Stack Segment */}
-                      <div ref={stackBlockRef} className="h-24 bg-slate-300 border-b border-slate-400 flex flex-col items-center pt-2 relative">
-                        <span className="text-blue-800 font-bold text-sm">Stack</span>
+                      <div ref={stackBlockRef} className="h-16 bg-slate-300 border-b border-slate-400 flex flex-col items-center justify-center relative">
+                        <span className="text-blue-800 font-bold text-sm leading-none">Stack</span>
                         <div className="text-blue-800">↓</div>
                         <div className="absolute -left-20 -top-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00003000)}
@@ -444,15 +444,15 @@ export function IdePage() {
                         {/* SP Indicator */}
                         <div 
                           className="absolute -left-28 flex items-center text-black font-bold font-mono text-xs transition-all duration-300 z-10 bg-white/80 px-1 rounded shadow-sm"
-                          style={{ top: `${Math.min(85, Math.max(0, (0x00002ffc - spVal) / 4 * 4))}px` }}
+                          style={{ top: `${Math.min(52, Math.max(0, (0x00002ffc - spVal) / 4 * 4))}px` }}
                         >
                           $sp <span className="text-red-600 mx-1">▶</span> {toHex(spVal)}
                         </div>
                       </div>
                     
                       {/* Heap Segment */}
-                      <div className="h-16 bg-green-50 flex flex-col items-center justify-center border-b border-slate-400 relative">
-                        <div className="text-blue-800 text-xs mb-1">↑</div>
+                      <div className="h-12 bg-green-50 flex flex-col items-center justify-center border-b border-slate-400 relative">
+                        <div className="text-blue-800 text-xs leading-none">↑</div>
                         <span className="text-blue-800 font-bold text-xs">Heap</span>
                         <div className="absolute -left-20 -bottom-2 text-blue-800 font-mono text-[10px] bg-white/80 px-1 rounded">
                           {toHex(0x00002000)}
@@ -460,8 +460,8 @@ export function IdePage() {
                       </div>
                     
                       {/* Data Segment */}
-                      <div ref={staticDataBlockRef} className="h-24 bg-blue-100 flex flex-col items-center justify-end pb-2 relative">
-                        <span className="text-blue-800 text-xs mb-8">.data Segment</span>
+                      <div ref={staticDataBlockRef} className="h-16 bg-blue-100 flex flex-col items-center justify-center relative">
+                        <span className="text-blue-800 text-xs">.data Segment</span>
                         <div className="absolute -left-[100px] top-2 flex items-center text-black font-bold font-mono text-[10px] bg-white/80 px-1 rounded shadow-sm">
                           $gp <span className="text-red-600 mx-1">▶</span> {toHex(0x00001800)}
                         </div>
@@ -472,7 +472,7 @@ export function IdePage() {
                     </div>
                     
                     {/* .data section view */}
-                    <div className="w-full flex flex-col items-center mt-4 relative z-10 ml-16">
+                    <div className="w-full flex flex-col items-center relative z-10 ml-16">
                       <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x00000000)</h3>
                       <div 
                         ref={dataSegmentViewRef} 
