@@ -104,6 +104,7 @@ interface MipsState {
   registers: Register[];
   cp0Registers: Register[];
   memory: Record<number, number>; // address -> value (word)
+  memoryWriteSources: Record<number, string>; // address -> last source register that stored here
   timers: { [key: string]: TimerState };
   
   // Track changes for highlighting
@@ -339,6 +340,55 @@ loop_in:
   nop
 
 loop_in_end:
+`
+  },
+  {
+    name: "栈与.data覆盖演示",
+    mipsCode: `.data
+nums:   .word 3, 7
+result: .word 0
+
+.text
+main:
+  # 从 .data 读取两个数
+  la      $t0, nums
+  lw      $a0, 0($t0)      # $a0 = nums[0] = 3
+  lw      $a1, 4($t0)      # $a1 = nums[1] = 7
+
+  # 调用函数，函数内部会使用栈保存参数
+  jal     sum_with_stack
+  nop
+
+  # 写入 .data 的 result，然后立刻覆盖它
+  la      $t1, result
+  sw      $v0, 0($t1)      # result = 10
+  addi    $v0, $v0, 1
+  sw      $v0, 0($t1)      # 覆盖 result = 11
+
+done:
+  j       done
+  nop
+
+sum_with_stack:
+  # 入栈：保存返回地址和两个参数
+  addi    $sp, $sp, -12
+  sw      $ra, 8($sp)
+  sw      $a0, 4($sp)
+  sw      $a1, 0($sp)
+
+  # 从栈中取回参数并求和
+  lw      $t2, 4($sp)
+  lw      $t3, 0($sp)
+  add     $v0, $t2, $t3
+
+  # 覆盖栈中原来保存 $a1 的位置，便于观察覆盖效果
+  sw      $v0, 0($sp)      # 覆盖 0($sp): 7 -> 10
+
+  # 出栈并返回
+  lw      $ra, 8($sp)
+  addi    $sp, $sp, 12
+  jr      $ra
+  nop
 `
   },
   {
@@ -755,6 +805,33 @@ function toHexString(num: number): string {
   return hex.padStart(8, '0');
 }
 
+const parseStoreSourceRegister = (instructionText?: string): string | null => {
+  if (!instructionText) return null;
+
+  const code = instructionText
+    .replace(/#.*$/, '')
+    .replace(/\|r/g, '')
+    .trim();
+  const match = code.match(/^(sw|sb|sh)\s+(\$[a-zA-Z0-9]+)\s*,/i);
+  return match ? match[2] : null;
+};
+
+const getMemoryWriteSource = (snap: any, instructions: Instruction[]): string | null => {
+  const memStage = snap.pipeline?.MEM;
+  if (!memStage || memStage.is_bubble) return null;
+
+  const memPc = parseInt(memStage.pc, 16);
+  const frontendInstruction = instructions.find(
+    inst => inst.type === 'code' && inst.address === memPc
+  );
+
+  return (
+    parseStoreSourceRegister(frontendInstruction?.text) ||
+    parseStoreSourceRegister(memStage.render_str) ||
+    parseStoreSourceRegister(memStage.instr)
+  );
+};
+
 const preparePiplinePayload = (expandedMips: string, memoryRecord: Record<number, number>) => {
   const { asm_source, handler_source } = extractSegments(expandedMips);
   const initial_memory: Record<string, string> = {};
@@ -786,6 +863,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
     registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
     cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
       memory: initialMemory,
+      memoryWriteSources: {},
       timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
       changedRegisters: new Set(),
         changedCp0Registers: new Set(),
@@ -822,6 +900,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        memoryWriteSources: {},
         timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
         changedRegisters: new Set(),
         changedCp0Registers: new Set(),
@@ -858,6 +937,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        memoryWriteSources: {},
         timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
         changedRegisters: new Set(),
         changedCp0Registers: new Set(),
@@ -893,6 +973,12 @@ export const useMipsStore = create<MipsState>((set, get) => {
         const prevMemory = get().memory;
         const newMemory = { ...prevMemory };
         const changedMemory = new Set<number>();
+        const memoryWriteSources = { ...get().memoryWriteSources };
+        const memoryWriteSource = getMemoryWriteSource(snap, get().instructions);
+        const memoryChangeEntries = Object.keys(snap.events?.memory_changes || {});
+        const memoryWriteAddresses = memoryChangeEntries.length > 0
+          ? memoryChangeEntries
+          : (snap.events?.memory_written || []);
         for (const [addrHex, valHex] of Object.entries(snap.memory || {})) {
           const addr = parseInt(addrHex, 16);
           const val = parseInt(valHex as string, 16);
@@ -900,6 +986,11 @@ export const useMipsStore = create<MipsState>((set, get) => {
             changedMemory.add(addr);
           }
           newMemory[addr] = val;
+        }
+        if (memoryWriteSource) {
+          for (const addrHex of memoryWriteAddresses) {
+            memoryWriteSources[parseInt(addrHex, 16)] = memoryWriteSource;
+          }
         }
         
         const prevTimers = get().timers;
@@ -977,6 +1068,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
           registers: newRegisters,
           cp0Registers: newCp0Registers,
           memory: newMemory,
+          memoryWriteSources,
           timers: newTimers,
           changedRegisters,
           changedCp0Registers,
@@ -1012,6 +1104,7 @@ export const useMipsStore = create<MipsState>((set, get) => {
         registers: JSON.parse(JSON.stringify(INITIAL_REGISTERS)),
         cp0Registers: JSON.parse(JSON.stringify(INITIAL_CP0_REGISTERS)),
         memory,
+        memoryWriteSources: {},
         timers: JSON.parse(JSON.stringify(INITIAL_TIMERS)),
         changedRegisters: new Set(),
         changedCp0Registers: new Set(),

@@ -8,7 +8,7 @@ export function IdePage() {
   const { 
     sourceMipsCode, setSourceMipsCode,
     instructions, currentInstructionIndex, registers, cp0Registers, pc, memory,
-    changedRegisters, changedCp0Registers, changedMemory,
+    memoryWriteSources, changedRegisters, changedCp0Registers, changedMemory,
     stepExecution, resetExecution,
     interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
   } = useMipsStore();
@@ -476,7 +476,7 @@ export function IdePage() {
                       <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">.data 段内存 (0x00000000)</h3>
                       <div 
                         ref={dataSegmentViewRef} 
-                        className="w-52 border border-slate-300 bg-white rounded overflow-y-auto text-xs font-mono h-48 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)] relative"
+                        className="w-64 border border-slate-300 bg-white rounded overflow-y-auto overflow-x-hidden text-xs font-mono h-48 shadow-[-10px_0_15px_-10px_rgba(0,0,0,0.05)] relative"
                         onScroll={() => {
                           // Manually trigger the update arrows effect when data segment scrolls
                           window.dispatchEvent(new Event('resize'));
@@ -487,14 +487,20 @@ export function IdePage() {
                           const offset = (dataWordCount - 1 - i) * 4;
                           const addr = 0x00000000 + offset;
                           const val = memory[addr];
+                          const source = memoryWriteSources[addr];
                           const isChanged = changedMemory.has(addr);
                           return (
                             <div key={addr} className={`flex border-b border-slate-200 last:border-b-0 transition-all ${isChanged ? 'bg-yellow-100' : 'hover:bg-slate-50'}`}>
-                              <div className="w-24 bg-slate-100 p-1 text-slate-500 border-r border-slate-200 text-center">
+                              <div className="w-24 shrink-0 bg-slate-100 p-1 text-slate-500 border-r border-slate-200 text-center">
                                 {toHex(addr)}
                               </div>
-                              <div className={`flex-1 p-1 text-center ${isChanged ? 'text-yellow-800 font-bold' : 'text-slate-800'}`}>
-                                {val !== undefined ? toHex(val) : '-'}
+                              <div className={`min-w-0 flex-1 p-1 grid grid-cols-[1fr_auto_2.25rem] items-baseline ${isChanged ? 'text-yellow-800 font-bold' : 'text-slate-800'}`}>
+                                <span className="col-start-2 text-center">{val !== undefined ? toHex(val) : '-'}</span>
+                                {val !== undefined && source && (
+                                  <span className={`col-start-3 pl-1 text-left text-[10px] font-semibold ${isChanged ? 'text-yellow-700' : 'text-blue-600'}`}>
+                                    ({source})
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );
@@ -506,7 +512,7 @@ export function IdePage() {
                 </div>
 
                 {/* Connecting Visual SVG */}
-                <div ref={svgContainerRef} className="hidden lg:block fixed inset-0 pointer-events-none z-[60]" style={{ overflow: 'visible' }}>
+                <div ref={svgContainerRef} className="hidden lg:block absolute inset-0 pointer-events-none z-0" style={{ overflow: 'visible' }}>
                    <svg width="100%" height="100%" className="absolute inset-0" style={{ overflow: 'visible' }}>
                     <defs>
                       <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -544,6 +550,7 @@ export function IdePage() {
                     <div className="w-full border-2 border-slate-400 bg-white relative text-sm overflow-y-auto">
                       {stackCells.map((cell) => {
                         const isChanged = cell.value !== undefined && changedMemory.has(cell.address);
+                        const source = memoryWriteSources[cell.address];
                         return (
                         <div key={cell.address} className={`border-b border-dashed border-slate-300 p-2 text-center font-mono relative h-12 flex flex-col justify-center transition-all ${isChanged ? 'bg-yellow-100' : ''}`}>
                           {cell.isSp && (
@@ -559,8 +566,13 @@ export function IdePage() {
                              </span>
                            )}
                            
-                           <span className={`font-bold ${isChanged ? 'text-yellow-800' : 'text-slate-800'}`}>
-                             {cell.value !== undefined ? toHex(cell.value) : '-'}
+                           <span className={`font-bold grid grid-cols-[1fr_auto_2.75rem] items-baseline ${isChanged ? 'text-yellow-800' : 'text-slate-800'}`}>
+                             <span className="col-start-2 text-center">{cell.value !== undefined ? toHex(cell.value) : '-'}</span>
+                             {cell.value !== undefined && source && (
+                               <span className={`col-start-3 pl-1 text-left text-[10px] font-semibold ${isChanged ? 'text-yellow-700' : 'text-blue-600'}`}>
+                                 ({source})
+                               </span>
+                             )}
                            </span>
                          </div>
                         );
