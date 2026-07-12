@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, StepForward, ArrowRight, Zap, FileCode } from 'lucide-react';
+import { RotateCcw, StepForward, ArrowRight, FileCode } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
 import Editor from '@monaco-editor/react';
 import { TimerView } from '../components/TimerView';
@@ -196,18 +196,6 @@ export function IdePage() {
             <StepForward size={16} className="mr-1" />
             单步执行
           </button>
-          <button
-            onClick={triggerInterrupt}
-            disabled={interruptState.isActive || currentInstructionIndex === 0}
-            className={`flex items-center px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              interruptState.isActive || currentInstructionIndex === 0 
-                ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
-                : 'bg-amber-600 hover:bg-amber-500'
-            }`}
-          >
-            <Zap size={16} className="mr-1" />
-            触发中断
-          </button>
         </div>
       </header>
 
@@ -366,13 +354,6 @@ export function IdePage() {
               onClick={() => setActiveTab('stackAndMemory')}
             >
               栈帧 & 内存管理
-            </button>
-            <button 
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg ${activeTab === 'interrupt' || interruptState.isActive ? 'bg-white text-amber-600 border-t border-x border-slate-300 border-b-white translate-y-px' : 'text-slate-500 hover:text-slate-700'}`}
-              onClick={() => setActiveTab('interrupt')}
-            >
-              {interruptState.isActive && <span className="inline-block w-2 h-2 bg-amber-500 rounded-full mr-2 animate-pulse"></span>}
-              中断处理过程
             </button>
           </div>
 
@@ -586,124 +567,7 @@ export function IdePage() {
               </div>
             )}
 
-            {/* Tab 3: Interrupt Handling */}
-            {activeTab === 'interrupt' && (
-              <div className="h-full flex flex-col p-4 overflow-auto">
-                <h2 className="text-2xl font-bold text-center mb-8 text-slate-800">中断处理I/O的基本过程示例</h2>
-                
-                <div className="flex flex-1">
-                  <div className="w-1/2 p-4">
-                    <div className="space-y-4 text-sm font-medium">
-                      {[
-                        "1) 设备向cpu发出中断请求信号",
-                        "2) cpu执行完sub后，将sub下一条指令的PC值保存好",
-                        "3) cpu自动将ISR的首地址加载到PC中，从而实现跳转",
-                        "4) cpu执行ISR完成输入输出等操作",
-                        "5) cpu执行eret指令实现从ISR返回"
-                      ].map((text, i) => (
-                        <div key={i} className="flex items-start">
-                          <span className="inline-block w-2.5 h-2.5 bg-green-500 mr-3 mt-1 shrink-0"></span>
-                          <span className={`${interruptState.step === i + 1 ? 'text-blue-600 font-bold' : 'text-slate-700'}`}>
-                            {text}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="flex items-start pl-5 text-xs text-slate-500 italic mt-2">
-                        <span className="mr-2">◆</span>
-                        eret功能之一是将保存的PC值写入PC
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="w-1/2 flex justify-center items-center relative p-8">
-                    {/* Container for Arrows and Stack to ensure alignment */}
-                    <div className="relative flex items-center h-[400px]">
-                      
-                      {/* Middle Layer: Labels and Arrows (mimicking PowerPoint style) */}
-                      <div className="w-48 h-full relative pointer-events-none z-20 mr-2">
-                        <svg className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
-                          <defs>
-                            <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                              <path d="M 0 0 L 10 5 L 0 10 z" fill="red" />
-                            </marker>
-                          </defs>
-
-                          {/* 1) 中断请求有效 -> sub (60px) */}
-                          {interruptState.step >= 1 && (
-                            <line x1="140" y1="60" x2="188" y2="60" stroke="red" strokeWidth="2" markerEnd="url(#arrowRed)" />
-                          )}
-
-                          {/* 2) 保存PC -> and (100px) */}
-                          {interruptState.step >= 2 && (
-                            <line x1="140" y1="100" x2="188" y2="100" stroke="red" strokeWidth="2" markerEnd="url(#arrowRed)" />
-                          )}
-
-                          {/* Vertical arrow from Step 2 to Step 3 */}
-                          {interruptState.step >= 3 && (
-                            <line x1="110" y1="120" x2="110" y2="140" stroke="red" strokeWidth="2" markerEnd="url(#arrowRed)" />
-                          )}
-
-                          {/* 3) 跳转ISR -> lw (220px) */}
-                          {interruptState.step >= 3 && (
-                            <path d="M 140,160 L 160,160 L 160,220 L 188,220" stroke="red" strokeWidth="2" fill="none" markerEnd="url(#arrowRed)" />
-                          )}
-
-                          {/* 5) Return: eret (340px) -> and (100px) */}
-                          {interruptState.step >= 5 && (
-                            <path d="M 188,340 L 175,340 L 175,100 L 188,100" stroke="red" strokeWidth="2" fill="none" markerEnd="url(#arrowRed)" />
-                          )}
-                        </svg>
-
-                        {/* Labels - positioned to align with PowerPoint layout */}
-                        {interruptState.step >= 1 && (
-                          <div className="absolute top-[50px] left-0 w-full text-right pr-12 text-black font-bold text-xs whitespace-nowrap">
-                            1) 中断请求有效
-                          </div>
-                        )}
-                        
-                        {interruptState.step >= 2 && (
-                          <div className="absolute top-[90px] left-0 w-full text-right pr-12 text-black font-bold text-xs whitespace-nowrap">
-                            2) 保存PC
-                          </div>
-                        )}
-                        
-                        {interruptState.step >= 3 && (
-                          <div className="absolute top-[150px] left-0 w-full text-right pr-12 text-black font-bold text-xs whitespace-nowrap">
-                            3) 跳转ISR
-                          </div>
-                        )}
-                        
-                        {interruptState.step >= 4 && (
-                          <div className="absolute top-[210px] left-0 w-full text-right pr-12 text-black font-bold text-xs whitespace-nowrap">
-                            4) 执行ISR
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Execution Stack */}
-                      <div className="w-24 border-2 border-black font-mono text-center text-xs relative bg-white z-10 shrink-0">
-                        <div className="absolute -right-8 top-[1.5rem] text-black font-bold tracking-widest text-[10px]" style={{ writingMode: 'vertical-rl' }}>用户程序</div>                   
-                        {/* User Program */}
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#E6F3F7]">add</div>
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#E6F3F7]">sub</div>
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#E6F3F7] ring-2 ring-red-500 ring-inset text-green-600 font-bold">and</div>
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#E6F3F7]">or</div>
-                        
-                        {/* Gap */}
-                        <div className="h-10 border-b border-black bg-white"></div>
-                        
-                        {/* ISR Program */}
-                        <div className="absolute -right-10 bottom-[1.5rem] text-black font-bold text-[10px]">ISR</div>
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#FEF2E4]">lw</div>
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#FEF2E4]">store</div>
-                        <div className="h-10 border-b border-black flex items-center justify-center bg-[#FEF2E4]">...</div>
-                        <div className="h-10 flex items-center justify-center bg-[#FEF2E4] text-green-600 font-bold">eret</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Tab 3: Interrupt Handling Removed */}
             
           </div>
         </div>
