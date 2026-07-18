@@ -50,6 +50,10 @@ export const piplineClient = {
     return request<SnapshotSchema>('/step_cycle', { method: 'POST' });
   },
 
+  async step_back() {
+    return request<SnapshotSchema>('/step_back', { method: 'POST' });
+  },
+
   async reset() {
     return request<{ success: boolean; message: string }>('/reset', { method: 'POST' });
   }

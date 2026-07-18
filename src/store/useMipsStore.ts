@@ -123,6 +123,8 @@ interface MipsState {
   setSourceMipsCode: (code: string) => void;
   setMipsCode: (code: string) => void;
   stepExecution: () => void;
+  stepBackward: () => void;
+  _applySnapshot: (snap: any) => void;
   resetExecution: () => void;
   togglePlay: () => void;
   
@@ -955,7 +957,24 @@ export const useMipsStore = create<MipsState>((set, get) => {
     stepExecution: async () => {
       try {
         const snap = await piplineClient.step_cycle() as any;
-        
+        get()._applySnapshot(snap);
+      } catch (e) {
+        console.error("Simulation step error:", e);
+        set({ isPlaying: false });
+      }
+    },
+
+    stepBackward: async () => {
+      try {
+        const snap = await piplineClient.step_back() as any;
+        get()._applySnapshot(snap);
+      } catch (e) {
+        console.error("Simulation step back error:", e);
+        set({ isPlaying: false });
+      }
+    },
+
+    _applySnapshot: (snap: any) => {
         const prevRegisters = get().registers;
         const newRegisters = JSON.parse(JSON.stringify(prevRegisters)) as Register[];
         const changedRegisters = new Set<number>();
@@ -997,10 +1016,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
         const newTimers = snap.timers || {};
         const changedTimers = new Set<string>();
         
-        // Ensure we only mark as changed if the previous timer state actually existed and was different.
-        // On the very first step, prevTimers might be empty {}, we should treat this as initialization, not a change.
-        // Now that we have INITIAL_TIMERS, we can just check if they are equal to '00000000' on the first load if needed,
-        // but simply comparing to prevTimers is fine.
         const isFirstTimerLoad = false;
         
         for (const timerId in newTimers) {
@@ -1036,7 +1051,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
         let nextPc = parseInt(snap.pc, 16);
         let isPipelineEmpty = true;
         
-        // Use MEM stage as macro PC if it has a valid instruction, else EX, ID, IF
         if (snap.pipeline?.MEM && !snap.pipeline.MEM.is_bubble) {
           nextPc = parseInt(snap.pipeline.MEM.pc, 16);
           isPipelineEmpty = false;
@@ -1051,9 +1065,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
           isPipelineEmpty = false;
         }
 
-        // If pipeline is totally empty, it means we just flushed (e.g. exception).
-        // In the backend, `self.pc` stores `target - 4`, so snap.pc is `target - 4`.
-        // We should add 4 to get the actual target PC.
         if (isPipelineEmpty) {
           nextPc += 4;
         }
@@ -1082,10 +1093,6 @@ export const useMipsStore = create<MipsState>((set, get) => {
         if (snap.outofbound) {
           set({ isPlaying: false });
         }
-      } catch (e) {
-        console.error("Simulation step error:", e);
-        set({ isPlaying: false });
-      }
     },
     
     

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, StepForward, ArrowRight, FileCode } from 'lucide-react';
+import { RotateCcw, StepForward, StepBack, ArrowRight, FileCode } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
 import Editor from '@monaco-editor/react';
 import { TimerView } from '../components/TimerView';
@@ -9,7 +9,7 @@ export function IdePage() {
     sourceMipsCode, setSourceMipsCode,
     instructions, currentInstructionIndex, registers, cp0Registers, pc, memory,
     memoryWriteSources, changedRegisters, changedCp0Registers, changedMemory,
-    stepExecution, resetExecution,
+    stepExecution, stepBackward, resetExecution,
     interruptState, triggerInterrupt, stepInterrupt, resetInterrupt
   } = useMipsStore();
 
@@ -127,6 +127,10 @@ export function IdePage() {
     }
   };
 
+  const handleStepBackward = () => {
+    stepBackward();
+  };
+
   const handleReset = () => {
     resetExecution();
     resetInterrupt();
@@ -188,6 +192,13 @@ export function IdePage() {
           >
             <RotateCcw size={16} className="mr-1" />
             重置
+          </button>
+          <button
+            onClick={handleStepBackward}
+            className="flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition-colors"
+          >
+            <StepBack size={16} className="mr-1" />
+            后退一步
           </button>
           <button
             onClick={handleStep}
