@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, StepForward, StepBack, ArrowRight, FileCode } from 'lucide-react';
+import { RotateCcw, StepForward, StepBack, ArrowRight, FileCode, Info } from 'lucide-react';
 import { useMipsStore, EXAMPLES } from '../store/useMipsStore';
 import Editor from '@monaco-editor/react';
 import { TimerView } from '../components/TimerView';
@@ -182,9 +182,17 @@ export function IdePage() {
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          <span className="font-mono bg-slate-800 px-3 py-1 rounded text-green-400 border border-slate-700">
-            PC: {toHex(pc)}
-          </span>
+          <div className="group relative flex items-center">
+            <span className="font-mono bg-slate-800 px-3 py-1 rounded text-green-400 border border-slate-700 cursor-help flex items-center">
+              PC: {toHex(pc)}
+              <Info size={14} className="ml-2 text-slate-400" />
+            </span>
+            {/* Tooltip */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-2 bg-slate-800 text-slate-200 text-xs rounded border border-slate-600 shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 whitespace-normal">
+              注：此处显示的 PC 值为当前流水线中 MEM 阶段指令对应的地址。在程序刚启动、遇到数据冒险（阻塞）或控制冒险（清空流水线）时，由于指令在流水线中的推进状态变化，可能会出现 PC 值暂时不变的现象，这是流水线执行的正常表现。
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 border-4 border-transparent border-b-slate-600"></div>
+            </div>
+          </div>
           <div className="w-px h-6 bg-slate-700 mx-2"></div>
           <button
             onClick={handleReset}
