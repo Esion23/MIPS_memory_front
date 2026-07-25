@@ -224,6 +224,10 @@ timer_done:
   # 7. 定时器结束，设置完成标志 0xBEEF 到 $v0
   lui $v0, 0x0000
   ori $v0, $v0, 0xBEEF
+
+end_loop:
+  j end_loop
+  nop
 `
   },
   {
@@ -252,6 +256,9 @@ loop:
   bgtz $t1, loop              # repeat if not finished yet.
   nop
   
+end_loop:
+  j end_loop
+  nop
 `
   },
   {
@@ -295,6 +302,10 @@ in_j_end:
   nop
 
 in_i_end:
+
+end_loop:
+  j end_loop
+  nop
 `
   },
   {
@@ -315,6 +326,10 @@ loop:
 
 loop_end:
   move $a0, $s1           # 赋值，$a0 = $s1
+
+end_loop:
+  j end_loop
+  nop
 `
   },
   {
@@ -342,6 +357,10 @@ loop_in:
   nop
 
 loop_in_end:
+
+end_loop:
+  j end_loop
+  nop
 `
   },
   {
@@ -403,6 +422,10 @@ main:
   jal     recursive_sum
   nop
   move    $s1, $v0        # $s1 保存 1+2+...+n 的结果
+
+end_loop:
+  j end_loop
+  nop
 
 recursive_sum:
   # 入栈：保存返回地址和本层参数 n
